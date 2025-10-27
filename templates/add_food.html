@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Добавить продукт{% endblock %}
+
+{% block body %}
+<header class="bg-dark text-white p-3 mb-4 d-flex justify-content-between align-items-center">
+  <h1 class="h5 m-0">Школьное питание</h1>
+  <nav>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm me-2">Главная</a>
+    <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">Выход</a>
+  </nav>
+</header>
+
+<div class="container">
+  <h2 class="h5 mb-3">Добавить обычную еду</h2>
+  <form method="POST" enctype="multipart/form-data" class="needs-validation" novalidate>
+    {{ form.csrf_token }}
+    <div class="mb-3">
+      <label class="form-label">Название</label>
+      <input class="form-control" type="text" name="name" required>
+    </div>
+
+    <div class="row g-2">
+      <div class="col-6 col-md-3">
+        <label class="form-label">Калории на 100г</label>
+        <input class="form-control" type="number" name="calories" step="0.1" required>
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label">Белки (г)</label>
+        <input class="form-control" type="number" name="protein" step="0.1" required>
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label">Жиры (г)</label>
+        <input class="form-control" type="number" name="fat" step="0.1" required>
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label">Углеводы (г)</label>
+        <input class="form-control" type="number" name="carbs" step="0.1" required>
+      </div>
+    </div>
+
+    <div class="mb-3 mt-3">
+      <label class="form-label">Изображение (файл с телефона) или URL</label>
+      <input class="form-control" type="file" name="image_file" accept="image/*">
+      <small class="text-muted">Или вставьте ссылку в поле ниже</small>
+      <input class="form-control mt-2" type="text" name="image">
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Штрихкод (EAN/UPC) — опционально</label>
+      <div class="input-group">
+        <input class="form-control" type="text" name="barcode" id="barcode-input" placeholder="например 4607123456789">
+        <button type="button" class="btn btn-outline-secondary" id="open-barcode-scanner">Сканировать камерой</button>
+      </div>
+    </div>
+
+    <div class="d-grid gap-2">
+      <button class="btn btn-primary btn-lg" type="submit">Добавить</button>
+      <a class="btn btn-outline-secondary btn-lg" href="{{ url_for('eat') }}">← Назад</a>
+    </div>
+  </form>
+</div>
+
+<script>
+// Простая клиентская валидация Bootstrap
+(function () {
+  'use strict'
+  var forms = document.querySelectorAll('.needs-validation')
+  Array.prototype.slice.call(forms).forEach(function (form) {
+    form.addEventListener('submit', function (event) {
+      if (!form.checkValidity()) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+      form.classList.add('was-validated')
+    }, false)
+  })
+})()
+</script>
+{% endblock %}

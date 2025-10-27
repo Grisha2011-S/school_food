@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1 class="text-center">500 - Внутренняя ошибка сервера</h1>
+    <p class="text-center">
+        Извините, но произошла внутренняя ошибка.
+        <br>
+        Пожалуйста, попробуйте позже или обратитесь к администратору.
+        <br>
+        <a href="{{ url_for('index') }}">Вернуться на главную</a>
+    </p>
+</div>
+{% endblock %}

@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}{{ t('menu.register') }}{% endblock %}
+
+{% block body %}
+
+<form class="register-form container mt-5 p-4 border rounded shadow-sm bg-light" method="POST" action="{{ url_for('register') }}">
+  <h2 class="mb-4 text-center">{{ t('menu.register') }}</h2>
+
+  <div class="mb-3">
+  <label for="role" class="form-label">{{ t('roles.who_are_you') }}</label>
+    <select class="form-select" name="role" id="role" required onchange="toggleRegistrationFields()">
+  <option value="parent">{{ t('roles.parent') }}</option>
+  <option value="cook">{{ t('roles.cook') }}</option>
+  <option value="teacher">{{ t('roles.teacher') }}</option>
+    </select>
+  </div>
+
+  <div class="mb-3">
+  <label for="login" class="form-label">{{ t('auth.login') }}</label>
+    <input type="text" class="form-control" id="login" name="login" required>
+  </div>
+
+  <div class="mb-3">
+  <label for="password" class="form-label">{{ t('auth.password') }}</label>
+    <input type="password" class="form-control" id="password" name="password" required>
+  </div>
+
+  <!-- Поля для повара и учителя -->
+  <div id="schoolFields" style="display: none;">
+    <div class="mb-3">
+  <label for="city" class="form-label">{{ t('school.city') }}</label>
+        <select id="reg_city" name="city" class="form-select">
+          <option value="">{{ t('school.select_city') }}</option>
+          <option value="Петропавловск">Петропавловск</option>
+          <option value="Санкт-Петербург">Санкт-Петербург</option>
+          <option value="Новосибирск">Новосибирск</option>
+        </select>
+    </div>
+    <div class="mb-3">
+      <label for="school" class="form-label">{{ t('school.school') }}</label>
+        <select id="reg_school" name="school" class="form-select">
+          <option value="">{{ t('school.select_school') }}</option>
+        </select>
+    </div>
+  </div>
+
+    <!-- Специальные поля для учителя -->
+    <div id="teacherFields" style="display: none;">
+      <div class="mb-3">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="has_class" name="has_class" onchange="toggleGradeField()">
+          <label class="form-check-label" for="has_class">
+            {{ t('school.has_class') }}
+          </label>
+        </div>
+      </div>
+      <div class="mb-3" id="gradeField" style="display: none;">
+        <label for="grade" class="form-label">{{ t('school.grade') }}</label>
+        <select id="reg_grade" name="grade" class="form-select">
+          <option value="">{{ t('school.select_grade') }}</option>
+        </select>
+      </div>
+    </div>
+
+  <!-- Родитель больше не вводит данные ребёнка при регистрации; ребёнка нужно добавить отдельно -->
+  <button type="submit" class="btn btn-primary w-100 mt-3">{{ t('auth.sign_up') }}</button>
+  <button type="button" class="btn btn-secondary w-100 mt-2" onclick="history.back()">{{ t('auth.back') }}</button>
+</form>
+
+<script>
+// Подключаем селекторы
+document.addEventListener('DOMContentLoaded', function() {
+  const regCity = document.getElementById('reg_city');
+  const regSchool = document.getElementById('reg_school');
+  const regGrade = document.getElementById('reg_grade');
+  
+      async function loadRegCities(){
+    try{
+      const r = await fetch('/api/cities');
+      const data = await r.json();
+      regCity.innerHTML = '<option value="">' + (window.translations && window.translations.school ? window.translations.school.select_city : '— выберите город —') + '</option>';
+      data.forEach(c => { const o = document.createElement('option'); o.value = c.name; o.textContent = c.name; regCity.appendChild(o); });
+    }catch(e){console.error('cities', e)}
+  }
+
+  async function loadRegSchools(city){
+    regSchool.innerHTML = '<option value="">' + (window.translations && window.translations.school ? window.translations.school.select_school : '— выберите школу —') + '</option>';
+    regGrade.innerHTML = '<option value="">' + (window.translations && window.translations.school ? window.translations.school.select_grade : '— выберите класс —') + '</option>';
+    if(!city) return;
+    try{
+      const r = await fetch('/api/schools?city=' + encodeURIComponent(city));
+      const data = await r.json();
+      data.forEach(s => { const o = document.createElement('option'); o.value = s.name; o.textContent = s.name; regSchool.appendChild(o); });
+    }catch(e){console.error('schools', e)}
+  }
+
+  async function loadRegGrades(school){
+    regGrade.innerHTML = '<option value="">' + (window.translations && window.translations.school ? window.translations.school.select_grade : '— выберите класс —') + '</option>';
+    if(!school) return;
+    try{
+      const r = await fetch('/api/grades?school=' + encodeURIComponent(school));
+      const data = await r.json();
+      data.forEach(g => { const o = document.createElement('option'); o.value = g.name; o.textContent = g.name; regGrade.appendChild(o); });
+    }catch(e){console.error('grades', e)}
+  }
+
+  function toggleRegistrationFields() {
+    const role = document.getElementById('role').value;
+    const schoolFields = document.getElementById('schoolFields');
+    const teacherFields = document.getElementById('teacherFields');
+    
+    // Скрываем все специальные поля
+    schoolFields.style.display = 'none';
+    teacherFields.style.display = 'none';
+    
+    // Показываем нужные поля в зависимости от роли
+    if (role === 'cook' || role === 'teacher') {
+      schoolFields.style.display = 'block';
+    }
+    
+    if (role === 'teacher') {
+      teacherFields.style.display = 'block';
+    }
+  }
+
+  function toggleGradeField() {
+    const hasClass = document.getElementById('has_class').checked;
+    const gradeField = document.getElementById('gradeField');
+    gradeField.style.display = hasClass ? 'block' : 'none';
+    if (!hasClass) {
+      regGrade.value = '';
+    }
+  }
+
+  // Подключаем обработчики событий
+  if(regCity) regCity.addEventListener('change', () => loadRegSchools(regCity.value));
+  if(regSchool) regSchool.addEventListener('change', () => loadRegGrades(regSchool.value));
+
+  // Первоначальная загрузка данных
+  loadRegCities();
+  if(regCity.value) loadRegSchools(regCity.value);
+  if(regSchool.value) loadRegGrades(regSchool.value);
+  toggleRegistrationFields();
+  
+  // Подключаем обработчик изменения роли
+  document.getElementById('role').addEventListener('change', toggleRegistrationFields);
+  // Подключаем обработчик чекбокса классного руководства
+  document.getElementById('has_class').addEventListener('change', toggleGradeField);
+});
+</script><script>
+function toggleRegistrationFields() {
+  const role = document.getElementById('role').value;
+  const schoolFields = document.getElementById('schoolFields');
+  const teacherFields = document.getElementById('teacherFields');
+  
+  // Скрываем все специальные поля
+  schoolFields.style.display = 'none';
+  teacherFields.style.display = 'none';
+  
+  // Показываем нужные поля в зависимости от роли
+  if (role === 'cook' || role === 'teacher') {
+    schoolFields.style.display = 'block';
+  }
+  
+  if (role === 'teacher') {
+    teacherFields.style.display = 'block';
+  }
+}
+
+function toggleGradeField() {
+  const hasClass = document.getElementById('has_class').checked;
+  const gradeField = document.getElementById('gradeField');
+  gradeField.style.display = hasClass ? 'block' : 'none';
+  
+  // Очищаем поле класса, если чекбокс снят
+  if (!hasClass) {
+    document.getElementById('grade').value = '';
+  }
+}
+
+// Вызываем функцию при загрузке страницы, чтобы установить правильное состояние полей
+document.addEventListener('DOMContentLoaded', toggleRegistrationFields);
+</script>
+<script>
+  const regCity = document.getElementById('reg_city');
+  const regSchool = document.getElementById('reg_school');
+
+  async function loadRegCities(){
+    try{
+      const r = await fetch('/api/cities');
+      const data = await r.json();
+      regCity.innerHTML = '<option value="">' + (window.translations && window.translations.school ? window.translations.school.select_city : '— выберите город —') + '</option>';
+      data.forEach(c => { const o = document.createElement('option'); o.value = c.name; o.textContent = c.name; regCity.appendChild(o); });
+    }catch(e){console.error('cities', e)}
+  }
+
+  async function loadRegSchools(city){
+    regSchool.innerHTML = '<option value="">' + (window.translations && window.translations.school ? window.translations.school.select_school : '— выберите школу —') + '</option>';
+    if(!city) return;
+    try{
+      const r = await fetch('/api/schools?city=' + encodeURIComponent(city));
+      const data = await r.json();
+      data.forEach(s => { const o = document.createElement('option'); o.value = s.name; o.textContent = s.name; regSchool.appendChild(o); });
+    }catch(e){console.error('schools', e)}
+  }
+
+  if(regCity) regCity.addEventListener('change', () => loadRegSchools(regCity.value));
+  document.addEventListener('DOMContentLoaded', async () => { await loadRegCities(); if(regCity.value) await loadRegSchools(regCity.value); });
+</script>
+
+{% endblock %}

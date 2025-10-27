@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}{{ t('menu.dashboard') }}{% endblock %}
+
+{% block body %}
+
+ <header class="bg-dark text-white p-3 mb-4 d-flex justify-content-between align-items-center">
+  <h1 class="h4 m-0">{{ t('school_cafe') }}</h1>
+  <nav>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm me-2">{{ t('menu.home') }}</a>
+    <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">{{ t('menu.logout') }}</a>
+  </nav>
+</header>
+
+<main class="container mb-5">
+  <!-- <button class="btn btn-outline-secondary mb-3" onclick="history.back()">← Назад</button> -->
+
+  {% if role == 'student' %}
+  <h2>{{ t('dashboard.welcome') }}, {{ login }}!</h2>
+
+    <div class="calories alert alert-info">{{ t('dashboard.remaining') }}: {{ calories }} {{ t('grams') }}</div>
+    <div class="bju mb-3">
+      <div>{{ t('food.protein') }}: {{ protein }} {{ t('grams') }}</div>
+      <div>{{ t('food.fat') }}: {{ fat }} {{ t('grams') }}</div>
+      <div>{{ t('food.carbs') }}: {{ carbs }} {{ t('grams') }}</div>
+    </div>
+
+    <!-- Кнопки для обычного студента -->
+    <div class="btn-group mb-3">
+  <a href="{{ url_for('eat') }}" class="btn btn-success">➕ {{ t('food.add_food') }}</a>
+  <button id="toggleEdit" class="btn btn-outline-primary">⚙ {{ t('dashboard.nutrition_info') }}</button>
+    </div>
+
+    <!-- Дополнительные возможности для учителя -->
+    {% if is_teacher %}
+    <div class="mt-2 mb-3">
+  <hr>
+  <h4>{{ t('dashboard.teacher_panel') }}</h4>
+      <div class="btn-group">
+        <a href="#" class="btn btn-primary">� Статистика класса</a>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="edit-section mb-3" id="editSection" style="display:none;">
+      <form method="POST" action="{{ url_for('update_calories') }}" class="row g-2">
+        <div class="col-md-3">
+          <label class="form-label">{{ t('food.calories') }}:</label>
+          <input type="number" class="form-control" name="calories" min="0" value="{{ calories }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">{{ t('food.protein') }} ({{ t('grams') }}):</label>
+          <input type="number" class="form-control" name="protein" min="0" step="0.1" value="{{ protein }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">{{ t('food.fat') }} ({{ t('grams') }}):</label>
+          <input type="number" class="form-control" name="fat" min="0" step="0.1" value="{{ fat }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">{{ t('food.carbs') }} ({{ t('grams') }}):</label>
+          <input type="number" class="form-control" name="carbs" min="0" step="0.1" value="{{ carbs }}">
+        </div>
+        <div class="col-12 mt-2">
+          <button type="submit" class="btn btn-primary">{{ t('actions.save') }}</button>
+        </div>
+      </form>
+    </div>
+
+    <h3>Вы уже съели:</h3>
+    <ul class="list-group">
+      {% for item in eaten %}
+        <li class="list-group-item">{{ item }}</li>
+      {% endfor %}
+    </ul>
+
+  {% elif role == 'parent' %}
+    <h2>Здравствуйте, {{ login }}!</h2>
+    
+    <div class="mt-3 mb-3 d-flex gap-2">
+      <a href="{{ url_for('parent_add_child') }}" class="btn btn-success">Добавить ребёнка</a>
+      <a href="{{ url_for('parent_children') }}" class="btn btn-outline-primary">Полный список детей</a>
+    </div>
+
+    <h3 class="mt-3">Мои дети</h3>
+    <div class="row g-3">
+      {% for child in children %}
+        {% set sum = child_summaries.get(child.id) %}
+        <div class="col-md-4">
+          <div class="card">
+            <div class="card-body">
+              <h5 class="card-title">{{ child.name or child.login }}</h5>
+              <p class="card-text">Остаток калорий: {{ sum.remaining_cal }} ккал</p>
+              <p class="card-text small">Белки: {{ sum.remaining_prot }} г · Жиры: {{ sum.remaining_fat }} г · Углеводы: {{ sum.remaining_carbs }} г</p>
+              <p class="card-text"><strong>Съедено сегодня:</strong> {{ sum.sum_cal }} ккал</p>
+              <details>
+                <summary class="small">Показать съеденные блюда</summary>
+                <ul class="list-group list-group-flush mt-2">
+                  {% for log in child_logs.get(child.id, []) %}
+                    <li class="list-group-item small">{{ log.name }} — {{ log.calories }} ккал</li>
+                  {% endfor %}
+                </ul>
+              </details>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+  {% elif role == 'cook' %}
+    <h2>Здравствуйте, повар {{ login }}!</h2>
+    <div class="info mb-3">Вы можете управлять школьным меню.</div>
+    <a href="{{ url_for('cook_menu') }}" class="btn btn-primary">Перейти в меню повара</a>
+
+  {% else %}
+    <h2>Неизвестная роль</h2>
+  {% endif %}
+</main>
+
+
+<script>
+  document.getElementById("toggleEdit").addEventListener("click", function() {
+    const editSection = document.getElementById("editSection");
+    if(editSection.style.display === "none" || editSection.style.display === "") {
+      editSection.style.display = "block";
+      this.textContent = "✖ Закрыть настройки";
+    } else {
+      editSection.style.display = "none";
+      this.textContent = "⚙ Настройки КБЖУ";
+    }
+  });
+</script>
+
+{% endblock %}

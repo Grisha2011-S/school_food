@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+{% block title %}Управление школьной едой{% endblock %}
+
+{% block body %}
+
+<header class="bg-dark text-white p-3 mb-4 d-flex justify-content-between align-items-center">
+  <h1 class="h4 m-0">Школьное питание</h1>
+  <nav>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm me-2">Главная</a>
+    <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">Выход</a>
+  </nav>
+</header>
+
+<div class="container my-4">
+
+  <button class="btn btn-outline-secondary mb-3" onclick="history.back()">← Назад</button>
+
+  <h2 class="mb-3">Управление школьной едой</h2>
+
+  <h3>Добавить новый продукт</h3>
+  <form method="POST" enctype="multipart/form-data" class="mb-4 row g-3">
+    <input type="hidden" name="action" value="add">
+
+    <div class="col-md-4">
+      <label class="form-label">Название</label>
+      <input type="text" name="name" class="form-control" required>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Калории</label>
+      <input type="number" name="calories" class="form-control" required>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Белки</label>
+      <input type="number" name="protein" class="form-control" step="0.1" required>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Жиры</label>
+      <input type="number" name="fat" class="form-control" step="0.1" required>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Углеводы</label>
+      <input type="number" name="carbs" class="form-control" step="0.1" required>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Неделя</label>
+      <select name="week" class="form-select">
+        <option value="">—</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">День (1-5)</label>
+      <select name="day" class="form-select">
+        <option value="">—</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="7">7</option>
+      </select>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Изображение (файл с телефона) или URL</label>
+      <input type="file" name="image_file" accept="image/*" class="form-control mb-2">
+      <input type="text" name="image" class="form-control" placeholder="Или вставьте ссылку">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Штрихкод (опционально)</label>
+      <input type="text" name="barcode" class="form-control" placeholder="EAN / UPC">
+    </div>
+    <div class="col-12">
+      <button type="button" id="open-barcode-scanner-cook" class="btn btn-outline-secondary">Сканировать штрихкод камерой</button>
+    </div>
+    <div class="col-12">
+      <button type="submit" class="btn btn-success">Добавить</button>
+    </div>
+  </form>
+
+  <hr>
+
+  <h3>Существующие продукты</h3>
+  <div class="table-responsive">
+    <table class="table table-bordered align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Название</th>
+          <th>Ккал</th>
+          <th>Б</th>
+          <th>Ж</th>
+          <th>У</th>
+          <th>Изображение</th>
+          <th>Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for food in foods %}
+        <tr>
+          <form method="POST" enctype="multipart/form-data" class="d-flex align-items-center">
+            <input type="hidden" name="food_id" value="{{ food.id }}">
+            <td><input type="text" name="name" class="form-control" value="{{ food.name }}"></td>
+            <td><input type="number" name="calories" class="form-control" value="{{ food.calories }}"></td>
+            <td><input type="number" name="protein" class="form-control" step="0.1" value="{{ food.protein }}"></td>
+            <td><input type="number" name="fat" class="form-control" step="0.1" value="{{ food.fat }}"></td>
+            <td><input type="number" name="carbs" class="form-control" step="0.1" value="{{ food.carbs }}"></td>
+            <td>
+              <select name="week" class="form-select form-select-sm">
+                <option value="" {% if not food.week %}selected{% endif %}>—</option>
+                <option value="1" {% if food.week == 1 %}selected{% endif %}>1</option>
+                <option value="2" {% if food.week == 2 %}selected{% endif %}>2</option>
+              </select>
+            </td>
+            <td>
+              <select name="day" class="form-select form-select-sm">
+                <option value="" {% if not food.day %}selected{% endif %}>—</option>
+                {% for d in range(1,8) %}
+                  <option value="{{ d }}" {% if food.day == d %}selected{% endif %}>{{ d }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td>
+              {% if food.image %}
+                {% if food.image.startswith('http') %}
+                  <img src="{{ food.image }}" width="50" class="img-thumbnail">
+                {% else %}
+                  <img src="{{ url_for('static', filename='uploads/' ~ food.image) }}" width="50" class="img-thumbnail">
+                {% endif %}
+              {% endif %}
+              <div class="mt-1">
+                <label class="form-label form-label-sm">Штрихкод</label>
+                <div class="input-group">
+                  <input type="text" name="barcode" class="form-control form-control-sm barcode-field" value="{{ food.barcode or '' }}">
+                  <button type="button" class="btn btn-outline-secondary btn-sm scan-row-barcode">📷</button>
+                </div>
+
+              </div>
+              <input type="file" name="image_file" accept="image/*" class="form-control form-control-sm mt-1">
+            </td>
+            <td class="d-flex gap-2">
+              <button type="submit" name="action" value="edit" class="btn btn-primary btn-sm">Редактировать</button>
+              <button type="submit" name="action" value="delete" class="btn btn-danger btn-sm" onclick="return confirm('Удалить продукт?')">Удалить</button>
+              <button type="button" class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#qrModal" data-food-id="{{ food.id }}" data-food-name="{{ food.name }}" data-food-type="{{ food.type }}">QR</button>
+            </td>
+          </form>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+<!-- Модальное окно для генерации QR -->
+<div class="modal fade" id="qrModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Генерация QR</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+      </div>
+      <div class="modal-body text-center">
+        <p id="qrFoodName" class="fw-bold"></p>
+        <div class="mb-3">
+          <label class="form-label">Граммы (опционально)</label>
+          <input type="number" id="qrGrams" class="form-control" placeholder="Оставьте пустым для фиксированного порции">
+        </div>
+        <div id="qrcode"></div>
+        <p class="small mt-2">QR код содержит ссылку вида <code>/scan?food_id=ID[&grams=NN]</code></p>
+      </div>
+      <div class="modal-footer">
+        <a id="downloadQr" class="btn btn-success" href="#" download>Скачать QR</a>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- QRious library (рендер в canvas) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+<script>
+  var qrModal = document.getElementById('qrModal')
+  var qrObj = null
+  qrModal.addEventListener('show.bs.modal', function (event) {
+    var button = event.relatedTarget
+    var foodId = button.getAttribute('data-food-id')
+    var foodName = button.getAttribute('data-food-name')
+    var foodType = button.getAttribute('data-food-type')
+
+    document.getElementById('qrFoodName').textContent = foodName
+  var gramsInput = document.getElementById('qrGrams')
+  gramsInput.value = ''
+  var qrcodeDiv = document.getElementById('qrcode')
+  qrcodeDiv.innerHTML = ''
+
+  // Подготовим элементы для рендера: canvas (для QRious) и img (для fallback)
+  var qrCanvas = null
+  var qrImg = null
+
+    // Если блюдо типа 'school' — граммы не нужны
+    var gramsLabel = document.querySelector('#qrModal .form-label')
+    if (foodType === 'school') {
+      gramsInput.style.display = 'none'
+      gramsInput.disabled = true
+      if (gramsLabel) gramsLabel.style.display = 'none'
+    } else {
+      gramsInput.style.display = ''
+      gramsInput.disabled = false
+      if (gramsLabel) gramsLabel.style.display = ''
+    }
+
+    function ensureRenderer() {
+      // decide which renderer to use
+      if (typeof QRious !== 'undefined') {
+        if (!qrCanvas) {
+          qrCanvas = document.createElement('canvas')
+          qrCanvas.id = 'qrCanvas'
+          qrcodeDiv.appendChild(qrCanvas)
+        }
+        if (qrImg) { qrImg.remove(); qrImg = null }
+      } else {
+        if (!qrImg) {
+          qrImg = document.createElement('img')
+          qrImg.id = 'qrImg'
+          qrImg.alt = 'QR code'
+          qrImg.style.maxWidth = '220px'
+          qrcodeDiv.appendChild(qrImg)
+        }
+        if (qrCanvas) { qrCanvas.remove(); qrCanvas = null }
+      }
+    }
+
+    function buildQr() {
+      var grams = gramsInput.value
+      var url = window.location.origin + '/scan?food_id=' + encodeURIComponent(foodId)
+      if (foodType !== 'school' && grams) url += '&grams=' + encodeURIComponent(grams)
+
+      ensureRenderer()
+
+      var downloadLink = document.getElementById('downloadQr')
+
+      if (typeof QRious !== 'undefined' && qrCanvas) {
+        // создаём/обновляем QRious
+        if (!qrObj) {
+          qrObj = new QRious({element: qrCanvas, value: url, size: 220})
+        } else {
+          qrObj.set({value: url})
+        }
+        try {
+          var dataUrl = qrCanvas.toDataURL('image/png')
+          downloadLink.href = dataUrl
+          downloadLink.download = (foodName.replace(/\s+/g, '_') || 'qr') + '.png'
+        } catch (e) {
+          // ignore
+        }
+      } else if (qrImg) {
+        // fallback: use Google Chart API to render QR as image
+        var imgSrc = 'https://chart.googleapis.com/chart?cht=qr&chs=220x220&chl=' + encodeURIComponent(url)
+        qrImg.src = imgSrc
+        // if image fails to load (blocked/CSP), show fallback link and URL for debugging
+        qrImg.onerror = function(){
+          qrcodeDiv.innerHTML = '';
+          var err = document.createElement('div');
+          err.className = 'text-danger small mb-2';
+          err.textContent = 'Не удалось загрузить QR-изображение. Используйте ссылку ниже.';
+          qrcodeDiv.appendChild(err);
+          var link = document.createElement('a');
+          link.href = imgSrc;
+          link.target = '_blank';
+          link.rel = 'noopener';
+          link.textContent = imgSrc;
+          link.className = 'small';
+          qrcodeDiv.appendChild(link);
+          // set download link to raw url as fallback
+          downloadLink.href = imgSrc;
+        }
+        downloadLink.href = imgSrc
+        downloadLink.download = (foodName.replace(/\s+/g, '_') || 'qr') + '.png'
+      }
+    }
+
+    // очистим предыдущие обработчики
+    gramsInput.oninput = buildQr
+    buildQr()
+  })
+</script>
+
+<!-- Используется глобальный модал сканера из base.html -->
+
+{% endblock %}

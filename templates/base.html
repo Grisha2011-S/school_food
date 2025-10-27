@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="{{ session.get('language', 'ru') }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='img/favicon.ico') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+    <style>
+        /* Стили для элементов интерфейса */
+        .bd-placeholder-img {
+            font-size: 1.125rem;
+            text-anchor: middle;
+            user-select: none;
+        }
+        @media (min-width: 768px) {
+            .bd-placeholder-img-lg { font-size: 3.5rem; }
+        }
+        .album .card { margin-bottom: 1.5rem; }
+        
+        /* Стили для переключателя языков */
+        .language-selector {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 9999;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 5px;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        /* На мобильных оставляем там же */
+        @media (max-width: 768px) {
+            .language-selector {
+                bottom: 20px;
+                left: 20px;
+            }
+        }
+    </style>
+    <title>{% block title %}{% endblock %}</title>
+    <body>
+    <!-- <nav class="navbar navbar-expand-lg navbar-light bg-light mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('index') }}">{{ t('site_name') }}</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('index') }}">{{ t('menu.home') }}</a>
+                    </li>
+                    {% if session.get('role') == 'student' %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('photo_analyze') }}">{{ t('analyze_food') }}</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('eat') }}">{{ t('choose_food') }}</a>
+                        </li>
+                    {% endif %}
+                    {% if session.get('role') == 'cook' %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('cook_menu') }}">{{ t('food.school_menu') }}</a>
+                        </li>
+                    {% endif %}
+                    {% if session.get('role') == 'parent' %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('parent_children') }}">{{ t('dashboard.welcome') }}</a>
+                        </li>
+                    {% endif %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('about') }}">{{ t('menu.about') }}</a>
+                    </li>
+                </ul>
+                <ul class="navbar-nav">
+                    {% if session.get('user_id') %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('dashboard') }}">{{ t('menu.dashboard') }}</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('logout') }}">{{ t('menu.logout') }}</a>
+                        </li>
+                    {% else %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('login') }}">{{ t('menu.login') }}</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('register') }}">{{ t('menu.register') }}</a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav> -->
+
+        <div class="language-selector">
+            <div class="btn-group">
+                <a href="{{ url_for('change_lang', lang='ru') }}" class="btn btn-sm {% if session.get('language', 'ru') == 'ru' %}btn-primary{% else %}btn-outline-primary{% endif %}">RU</a>
+                <a href="{{ url_for('change_lang', lang='kk') }}" class="btn btn-sm {% if session.get('language') == 'kk' %}btn-primary{% else %}btn-outline-primary{% endif %}">KZ</a>
+            </div>
+            <!-- Отладочный бейдж: показывает текущую серверную настройку языка -->
+            <!-- <span class="badge bg-secondary ms-2" id="current-lang-badge">{{ session.get('language', 'ru') | upper }}</span> -->
+        </div>
+
+        {% block body %}{% endblock %}
+
+        <!-- Глобальный модал сканера штрихкодов -->
+        <div class="modal fade" id="barcodeScannerModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">{{ t('scan_barcode') }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ t('close') }}"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="text-center mb-2">
+                            <button type="button" id="start-barcode-camera" class="btn btn-primary">{{ t('start_camera') }}</button>
+                        </div>
+                        <div id="barcode-scanner" style="width:100%;min-height:300px"></div>
+                        <p class="small mt-2 text-muted">{{ t('scan_barcode_help') }}</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ t('close') }}</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    <!-- html5-qrcode (для сканирования штрихкодов камерой) -->
+    <script src="{{ url_for('static', filename='vendor/html5-qrcode.min.js') }}"></script>
+    <script>
+    (function(){
+    })();
+    </script>
+
+        <script>
+        // Глобальные переводы для JavaScript
+        window.translations = {
+            searching_camera: "{{ t('searching_camera') }}",
+            no_camera_found: "{{ t('no_camera_found') }}",
+            scanner_init_failed: "{{ t('scanner_init_failed') }}",
+            camera_start_failed: "{{ t('camera_start_failed') }}",
+            camera_permission_required: "{{ t('camera_permission_required') }}",
+            scanning: "{{ t('scanning') }}"
+        };
+
+        // Дополнительные переводы для форм и placeholder'ов
+        window.translations.auth = {
+            login: "{{ t('auth.login') }}",
+            password: "{{ t('auth.password') }}",
+            sign_up: "{{ t('auth.sign_up') }}",
+            back: "{{ t('auth.back') }}"
+        };
+        window.translations.roles = {
+            who_are_you: "{{ t('roles.who_are_you') }}",
+            parent: "{{ t('roles.parent') }}",
+            cook: "{{ t('roles.cook') }}",
+            teacher: "{{ t('roles.teacher') }}"
+        };
+        window.translations.school = {
+            city: "{{ t('school.city') }}",
+            school: "{{ t('school.school') }}",
+            grade: "{{ t('school.grade') }}",
+            select_city: "{{ t('school.select_city') }}",
+            select_school: "{{ t('school.select_school') }}",
+            select_grade: "{{ t('school.select_grade') }}",
+            has_class: "{{ t('school.has_class') }}"
+        };
+
+        (function(){
+            let scanner = null;
+            let currentTargetInput = null;
+            const modalEl = document.getElementById('barcodeScannerModal');
+            const containerSelector = '#barcode-scanner';
+
+            function showScannerModal(target){
+                currentTargetInput = target || document.querySelector('#barcode-input') || document.activeElement;
+                const modal = new bootstrap.Modal(modalEl);
+                modal.show();
+                // clear any previous messages
+                const container = modalEl.querySelector(containerSelector);
+                if(container) container.innerHTML = '';
+            }
+
+            function startCameraAndScan(){
+                const container = modalEl.querySelector(containerSelector);
+                if(!container) return;
+
+                container.innerHTML = '<div class="text-muted">' + window.translations.searching_camera + '</div>';
+
+                if(scanner){ try{ scanner.clear(); }catch(e){} scanner = null; }
+
+                // Проверим, что html5-qrcode загружен
+                    if(typeof Html5Qrcode === 'undefined'){
+                        console.warn('Html5Qrcode is undefined, will fallback to native detector');
+                        startNativeCamera(container);
+                        return;
+                    }
+
+                // Получаем список доступных камер и выбираем заднюю (если есть)
+                Html5Qrcode.getCameras().then(cameras => {
+                    if(!cameras || cameras.length === 0){
+                        container.innerHTML = '<div class="text-danger">' + window.translations.no_camera_found + '</div>';
+                        return;
+                    }
+
+                    // Try to find a back-facing camera by label (common keywords) or default to last camera
+                    let cameraId = null;
+                    const backKeywords = ['back', 'rear', 'environment', 'задн', 'rear camera', 'back camera'];
+                    for(const cam of cameras){
+                        const label = (cam.label || '').toLowerCase();
+                        if(backKeywords.some(k => label.includes(k))){ cameraId = cam.id; break; }
+                    }
+                    if(!cameraId){ cameraId = cameras[cameras.length - 1].id; }
+
+                    try{
+                        // создаём временный уникальный контейнер внутри modal body, чтобы избежать конфликтов id
+                        const uniqueId = 'barcode-scanner-canvas-' + Date.now();
+                        container.innerHTML = '<div id="' + uniqueId + '" style="width:100%;min-height:300px"></div>';
+                        scanner = new Html5Qrcode(uniqueId);
+                    }catch(e){
+                        const msg = (e && e.message) ? e.message : String(e);
+                        container.innerHTML = '<div class="text-danger">' + window.translations.scanner_init_failed + ': ' + msg + '</div>';
+                        console.error('Html5Qrcode init failed', e);
+                        // fallback to native
+                        startNativeCamera(container);
+                        return;
+                    }
+
+                    const config = { fps: 10, qrbox: { width: 300, height: 150 } };
+                    scanner.start(cameraId, config,
+                        (decodedText, decodedResult) => {
+                            try{
+                                const value = (decodedText || '').toString().trim();
+                                if(currentTargetInput && currentTargetInput.tagName === 'INPUT'){
+                                    currentTargetInput.value = value;
+                                    currentTargetInput.dispatchEvent(new Event('input', { bubbles: true }));
+                                } else {
+                                    const input = document.querySelector('#barcode-input');
+                                    if(input){
+                                        input.value = value;
+                                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                                    }
+                                }
+
+                                // If we are on the eat page with the search form, auto-submit it
+                                let searchForm = null;
+                                const bfCandidate = document.querySelector('form input[name="barcode"]');
+                                if(bfCandidate) searchForm = bfCandidate.closest('form');
+                                if(!searchForm){
+                                    // as a fallback, find a GET form that has a q input (likely the eat page)
+                                    const forms = document.querySelectorAll('form');
+                                    for(const f of forms){
+                                        try{
+                                            if((f.method || 'get').toLowerCase() === 'get' && f.querySelector('input[name="q"]')){ searchForm = f; break; }
+                                        }catch(e){}
+                                    }
+                                }
+                                if(searchForm){
+                                    const bf = searchForm.querySelector('input[name="barcode"]');
+                                    if(bf) bf.value = value;
+                                    setTimeout(() => { try{ searchForm.submit(); }catch(e){} }, 150);
+                                }
+                            }catch(e){ console.warn('Failed to set barcode value', e); }
+
+                            try{ scanner.stop(); }catch(e){}
+                            const modal = bootstrap.Modal.getInstance(modalEl);
+                            if(modal) modal.hide();
+                        },
+                        (errorMessage) => {
+                            // per-frame errors ignored
+                        }
+                    ).catch(err => {
+                        console.error('Scanner start failed', err);
+                        let msg = (err && err.message) ? err.message : String(err);
+                        container.innerHTML = '<div class="text-danger">' + window.translations.camera_start_failed + ': ' + msg + '. ' + window.translations.camera_permission_required + '</div>';
+                    });
+
+                    modalEl.addEventListener('hidden.bs.modal', function(){
+                        if(scanner){ try{ scanner.clear(); }catch(e){} scanner = null; }
+                    }, { once: true });
+                }).catch(err => {
+                    console.error('getCameras failed', err);
+                    container.innerHTML = '<div class="text-danger">Не удалось получить список камер: ' + (err && err.message ? err.message : err) + '</div>';
+                });
+            }
+
+            // Delegated click handlers
+            document.addEventListener('click', function(e){
+                const t = e.target;
+                if(!t) return;
+
+                if(t.id === 'open-barcode-scanner' || t.closest && t.closest('#open-barcode-scanner')){
+                    e.preventDefault();
+                    showScannerModal(document.querySelector('#barcode-input'));
+                    return;
+                }
+                if(t.id === 'open-barcode-scanner-cook' || t.closest && t.closest('#open-barcode-scanner-cook')){
+                    e.preventDefault();
+                    showScannerModal(document.querySelector('input[name="barcode"]'));
+                    return;
+                }
+                if(t.classList && t.classList.contains('scan-row-barcode')){
+                    const row = t.closest('tr');
+                    const input = row ? row.querySelector('.barcode-field') : null;
+                    showScannerModal(input);
+                    return;
+                }
+            });
+
+            // Start camera only on explicit start button click (user gesture)
+            const startBtn = document.getElementById('start-barcode-camera');
+            if(startBtn){
+                startBtn.addEventListener('click', function(e){
+                    e.preventDefault();
+                    startCameraAndScan();
+                });
+            }
+
+        // Native fallback using getUserMedia + BarcodeDetector (if available)
+        function startNativeCamera(container){
+            if(!container) return;
+            container.innerHTML = '';
+
+            const video = document.createElement('video');
+            video.style.width = '100%';
+            video.style.height = 'auto';
+            video.setAttribute('playsinline', ''); // for iOS
+            container.appendChild(video);
+
+            const status = document.createElement('div');
+            status.className = 'small text-muted mt-2';
+            status.textContent = window.translations.searching_camera;
+            container.appendChild(status);
+
+            // Запрос камеры
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(stream => {
+                video.srcObject = stream;
+                video.play();
+
+                // BarcodeDetector API
+                const Detector = window.BarcodeDetector || window.BarcodeDetectorPolyfill;
+                if(Detector && typeof Detector === 'function'){
+                    let detector = new Detector({formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128']});
+                    status.textContent = window.translations.scanning;
+                    // scan loop
+                    const scanLoop = () => {
+                        if(video.readyState !== HTMLMediaElement.HAVE_ENOUGH_DATA) { requestAnimationFrame(scanLoop); return; }
+                        try{
+                            detector.detect(video).then(barcodes => {
+                                    if(barcodes && barcodes.length){
+                                    const raw = barcodes[0].rawValue || barcodes[0].raw_value || barcodes[0].raw || '';
+                                    const value = (raw || '').toString().trim();
+                                    if(value){
+                                        try{
+                                            if(currentTargetInput && currentTargetInput.tagName === 'INPUT'){
+                                                currentTargetInput.value = value;
+                                                currentTargetInput.dispatchEvent(new Event('input', { bubbles: true }));
+                                            } else {
+                                                const input = document.querySelector('#barcode-input');
+                                                if(input){ input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); }
+                                            }
+                                        }catch(e){ console.warn('Failed to set barcode value', e); }
+
+                                        // try to auto-submit the search form as on html5-qrcode path
+                                        let searchForm = null;
+                                        const bfCandidate = document.querySelector('form input[name="barcode"]');
+                                        if(bfCandidate) searchForm = bfCandidate.closest('form');
+                                        if(!searchForm){
+                                            const forms = document.querySelectorAll('form');
+                                            for(const f of forms){
+                                                try{ if((f.method || 'get').toLowerCase() === 'get' && f.querySelector('input[name="q"]')){ searchForm = f; break; } }catch(e){}
+                                            }
+                                        }
+                                        try{ stream.getTracks().forEach(t => t.stop()); }catch(e){}
+                                        const modal = bootstrap.Modal.getInstance(modalEl);
+                                        if(modal) modal.hide();
+                                        if(searchForm){ setTimeout(() => { try{ searchForm.submit(); }catch(e){} }, 150); }
+                                        return;
+                                    }
+                                }
+                                requestAnimationFrame(scanLoop);
+                            }).catch(err => { console.warn('Detector.detect failed', err); requestAnimationFrame(scanLoop); });
+                        }catch(e){ console.warn('Detector loop error', e); requestAnimationFrame(scanLoop); }
+                    };
+                    requestAnimationFrame(scanLoop);
+                }else{
+                    // если BarcodeDetector не доступен, показать инструкцию и кнопку для ручного ввода
+                    status.innerHTML = 'Автоматическое распознавание штрихкода не поддерживается в этом браузере. Введите штрихкод вручную в поле или используйте Chrome/Edge/Firefox на Android.';
+                }
+            }).catch(err => {
+                console.error('getUserMedia failed', err);
+                container.innerHTML = '<div class="text-danger">Не удалось запустить камеру: ' + (err && err.message ? err.message : err) + '</div>';
+            });
+        }
+
+        })();
+        </script>
+
+    </body>
+    </html>

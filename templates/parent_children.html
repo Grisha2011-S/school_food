@@ -1,0 +1,38 @@
+ {% extends "base.html" %}
+{% block title %}Дети{% endblock %}
+
+{% block body %}
+<div class="container mt-4">
+  <h2>Мои дети</h2>
+  <div class="mb-3 d-flex gap-2">
+    <a class="btn btn-primary" href="{{ url_for('parent_add_child') }}">Добавить ребёнка</a>
+    <a class="btn btn-secondary ms-auto" href="{{ url_for('dashboard') }}">← Назад</a>
+  </div>
+
+  {% for child in children %}
+    <div class="card mb-3">
+      <div class="card-body">
+        <h5 class="card-title">{{ child.login }} {% if child.name %}({{ child.name }}){% endif %}</h5>
+        <p class="mb-1">Остаток калорий: <strong>{{ child_summaries[child.id].remaining_cal }} ккал</strong></p>
+        <p class="mb-1 small">Сегодня съедено: <strong>{{ child_summaries[child.id].sum_cal }} ккал</strong></p>
+        <p class="mb-2 small">Б: {{ child_summaries[child.id].sum_prot }} г · Ж: {{ child_summaries[child.id].sum_fat }} г · У: {{ child_summaries[child.id].sum_carbs }} г</p>
+        <div class="mt-2">
+          <a class="btn btn-outline-success btn-sm" href="{{ url_for('export_child_year', student_id=child.id, fmt='excel') }}">Экспорт Excel</a>
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('export_child_year', student_id=child.id, fmt='word') }}">Экспорт Word</a>
+          <a class="btn btn-primary btn-sm ms-2" href="{{ url_for('photo_analyze_child', student_id=child.id) }}">Анализ фото</a>
+        </div>
+        <details>
+          <summary class="small">Показать список съеденного</summary>
+          <ul class="list-group list-group-flush mt-2">
+            {% for lg in child_logs.get(child.id, []) %}
+              <li class="list-group-item small">{{ lg.created_at.strftime('%H:%M') }} — {{ lg.name }} ({{ lg.calories }} ккал)</li>
+            {% endfor %}
+          </ul>
+        </details>
+      </div>
+    </div>
+  {% else %}
+    <p>У вас пока нет добавленных детей.</p>
+  {% endfor %}
+</div>
+{% endblock %}

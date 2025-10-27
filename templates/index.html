@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t('menu.home') }}{% endblock %}
+
+{% block body %}
+<header data-bs-theme="dark">
+    <!-- Панель collapse -->
+    <div class="collapse text-bg-dark" id="navbarHeader">
+        <div class="container">
+            <div class="row">
+                <div class="col-sm-8 col-md-7 py-4">
+                    <h4>{{ t('about_project') }}</h4>
+                    <p class="text-body-secondary">
+                        {{ t('school_cafe_description') }}
+                    </p>
+                </div>
+                <div class="col-sm-4 offset-md-1 py-4">
+                    <h4>{{ t('contacts') }}</h4>
+                    <ul class="list-unstyled">
+                        <li><a href="#" class="text-white">Follow on X</a></li>
+                        <li><a href="#" class="text-white">Like on Facebook</a></li>
+                        <li><a href="#" class="text-white">Email me</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navbar -->
+    <div class="navbar navbar-dark bg-dark shadow-sm">
+        <div class="container d-flex justify-content-between align-items-center">
+            <a href="#" class="navbar-brand d-flex align-items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="me-2" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                    <circle cx="12" cy="13" r="4"></circle>
+                </svg>
+                <strong>{{ t('school_cafe') }}</strong>
+            </a>
+            
+                        <!-- Кнопки вход/регистрация или аккаунт/выход если залогинен -->
+                        <div class="d-flex">
+                                {% if logged_in %}
+                                    <a href="{{ url_for('dashboard') }}" class="btn btn-outline-light me-2">{{ t('menu.dashboard') }}</a>
+                                    <a href="{{ url_for('logout') }}" class="btn btn-danger me-2">{{ t('menu.logout') }}</a>
+                                {% else %}
+                                    <a href="{{ url_for('login') }}" class="btn btn-outline-light me-2">{{ t('menu.login') }}</a>
+                                    <a href="{{ url_for('register') }}" class="btn btn-warning">{{ t('menu.register') }}</a>
+                                {% endif %}
+                                <button class="navbar-toggler ms-2" type="button" data-bs-toggle="collapse" data-bs-target="#navbarHeader" aria-controls="navbarHeader" aria-expanded="false" aria-label="Toggle navigation">
+                                        <span class="navbar-toggler-icon"></span>
+                                </button>
+                        </div>
+        </div>
+    </div>
+</header>
+
+
+<!-- Главный контент -->
+<main>
+    <!-- Hero section -->
+    <section class="py-5 text-center container">
+        <div class="row py-lg-5">
+                <div class="col-lg-6 col-md-8 mx-auto">
+                <h1 class="fw-light">{{ t('todays_menu') }}</h1>
+                <p class="lead text-body-secondary">
+                    {{ t('fresh_food_description') }}
+                </p>
+                <p>
+                    <a href="{{ url_for('calorie_calculator') }}" class="btn btn-primary my-2">{{ t('calorie_calculator') }}</a>
+                    <a href="{{ url_for('photo_analyze') }}" class="btn btn-success my-2 ms-2">{{ t('analyze_food') }}</a>
+                    <a href="{{ url_for('about') }}" class="btn btn-secondary my-2">{{ t('more_about_us') }}</a>
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Album grid -->
+    <div class="album py-5 bg-body-tertiary">
+        <div class="container">
+            <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-3">
+                                {% if foods_today %}
+                                    {% for food in foods_today %}
+                                        <div class="col">
+                                            <div class="card shadow-sm">
+                                                {% if food.image %}
+                                                    {% if food.image.startswith('http') %}
+                                                        <img src="{{ food.image }}" class="card-img-top" style="height:225px;object-fit:cover;">
+                                                    {% else %}
+                                                        <img src="{{ url_for('static', filename='uploads/' ~ food.image) }}" class="card-img-top" style="height:225px;object-fit:cover;">
+                                                    {% endif %}
+                                                {% else %}
+                                                    <svg class="bd-placeholder-img card-img-top" width="100%" height="225" xmlns="http://www.w3.org/2000/svg" role="img" preserveAspectRatio="xMidYMid slice">
+                                                        <title>Thumbnail</title>
+                                                        <rect width="100%" height="100%" fill="#55595c"></rect>
+                                                        <text x="50%" y="50%" fill="#eceeef" dy=".3em">{{ food.name }}</text>
+                                                    </svg>
+                                                {% endif %}
+                                                <div class="card-body">
+                                                    <h5>{{ food.name }}</h5>
+                                                    <p class="card-text small">{{ t('food.calories') }}: {{ food.calories }} · {{ t('food.protein') }}: {{ food.protein }} {{ t('grams') }} · {{ t('food.fat') }}: {{ food.fat }} {{ t('grams') }} · {{ t('food.carbs') }}: {{ food.carbs }} {{ t('grams') }}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    {% endfor %}
+                                {% else %}
+                                        <div class="col-12">
+                                        <div class="alert alert-info">{{ t('no_menu_today') }}</div>
+                                    </div>
+                                {% endif %}
+            </div>
+        </div>
+    </div>
+</main>
+
+
+
+{% endblock %}

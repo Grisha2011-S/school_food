@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t('photo.food_analyzer') or 'Анализатор фото' }}{% endblock %}
+
+{% block body %}
+<div class="container py-4">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <h2 class="mb-3">{{ t('photo.food_analyzer') or 'Анализатор еды по фото' }}</h2>
+
+            <div class="card mb-3">
+                <div class="card-body">
+                    <form method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="file" class="form-label">{{ t('photo.select_photo') or 'Выберите фото' }}</label>
+                            <input class="form-control" type="file" id="file" name="file" accept="image/*" required>
+                        </div>
+                        <div>
+                            <button class="btn btn-primary">{{ t('photo.upload_and_analyze') or 'Загрузить и проанализировать' }}</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            {% if filename %}
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title">{{ t('photo.uploaded_photo') or 'Загруженное фото' }}</h5>
+                        <div class="mb-3">
+                            <img src="{{ url_for('static', filename='uploads/' ~ filename) }}" alt="uploaded" class="img-fluid" style="max-height:400px;object-fit:contain;">
+                        </div>
+                        {% if data %}
+                            <h6>{{ t('photo.analysis_result') or 'Результат анализа' }}</h6>
+                            <ul class="list-group mb-3">
+                                <li class="list-group-item">{{ t('food.calories') or 'Калории' }}: <strong>{{ data.calories }}</strong></li>
+                                <li class="list-group-item">{{ t('food.protein') or 'Белки' }}: <strong>{{ data.protein }}</strong> {{ t('grams') or 'г' }}</li>
+                                <li class="list-group-item">{{ t('food.fat') or 'Жиры' }}: <strong>{{ data.fat }}</strong> {{ t('grams') or 'г' }}</li>
+                                <li class="list-group-item">{{ t('food.carbs') or 'Углеводы' }}: <strong>{{ data.carbs }}</strong> {{ t('grams') or 'г' }}</li>
+                            </ul>
+
+                            <form action="{{ url_for('add_analyzed_food') }}" method="post">
+                                <input type="hidden" name="name" value="{{ data.name or (data.label or 'Проанализированное блюдо') }}">
+                                <input type="hidden" name="calories" value="{{ data.calories or 0 }}">
+                                <input type="hidden" name="protein" value="{{ data.protein or 0 }}">
+                                <input type="hidden" name="fat" value="{{ data.fat or 0 }}">
+                                <input type="hidden" name="carbs" value="{{ data.carbs or 0 }}">
+                                <input type="hidden" name="serving_size" value="{{ data.serving_size or '100г' }}">
+                                {% if target_student_id %}
+                                    <input type="hidden" name="student_id" value="{{ target_student_id }}">
+                                {% endif %}
+                                <button class="btn btn-success">{{ t('photo.add_to_diary') or 'Добавить в дневник' }}</button>
+                            </form>
+
+                        {% else %}
+                            <div class="alert alert-warning">{{ t('photo.analysis_failed') or 'Не удалось проанализировать изображение' }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+
+        </div>
+    </div>
+</div>
+{% endblock %}

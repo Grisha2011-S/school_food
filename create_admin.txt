@@ -1,0 +1,145 @@
+python create_master_admin.py
+python add_admin_columns.py
+
+
+
+
+# ---------------- Анализ фото еды ----------------
+
+# Убрана дублированная (устаревшая) реализация analyze_image_with_gemini.
+# Теперь используется единая реализация, определённая выше в файле.
+# Маршрут /analyze_food оставлен для совместимости — он вызывает единую функцию анализа.
+
+def allowed_file(filename):
+    """Проверяет, что расширение файла разрешено."""
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# --- Настройка Gemini API: читаем ключ из окружения и конфигурируем SDK ---
+# Поддерживаем два имени переменной для совместимости: GEMINI_API_KEY и API_KEY
+API_KEY = os.environ.get('GEMINI_API_KEY') or os.environ.get('API_KEY')
+if API_KEY:
+    try:
+        genai.configure(api_key=API_KEY)
+        app.config['GENAI_CONFIGURED'] = True
+        app.logger.info('Gemini SDK configured')
+    except Exception as e:
+        app.config['GENAI_CONFIGURED'] = False
+        app.logger.error(f'Failed to configure Gemini SDK: {e}')
+else:
+    app.config['GENAI_CONFIGURED'] = False
+    app.logger.warning('GEMINI_API_KEY or API_KEY not set; image analysis disabled.')
+
+def analyze_image_with_gemini(image_path):
+    """
+    Анализирует изображение с помощью Gemini API и возвращает данные о питательности.
+    """
+    try:
+        # Проверяем, что SDK настроен — см. инициализацию выше
+        if not app.config.get('GENAI_CONFIGURED', False):
+            app.logger.error('Gemini API not configured. Set GEMINI_API_KEY or API_KEY environment variable.')
+            return None
+        # Используем модель gemini-2.5-flash, как в JS-версии
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        img = Image.open(image_path)
+        
+        # Схема для получения структурированного JSON ответа
+        # Python SDK использует словари для схемы
+        nutrition_schema = {
+            "type": "OBJECT",
+            "properties": {
+                "foodName": {
+                    "type": "STRING",
+                    "description": "Название блюда, определенного на изображении. Если еда не найдена, укажите 'Еда не найдена'.",
+                },
+                "servingSize": {
+                    "type": "STRING",
+                    "description": "Примерный вес порции, показанной на изображении, например 'около 250г'.",
+                },
+                "calories": {
+                    "type": "NUMBER",
+                    "description": "Примерное количество калорий для порции на фото.",
+                },
+                "protein": {
+                    "type": "NUMBER",
+                    "description": "Примерное количество белка в граммах для порции на фото.",
+                },
+                "fat": {
+                    "type": "NUMBER",
+                    "description": "Примерное количество жиров в граммах для порции на фото.",
+                },
+                "carbohydrates": {
+                    "type": "NUMBER",
+                    "description": "Примерное количество углеводов в граммах для порции на фото.",
+                },
+            },
+            "required": ["foodName", "servingSize", "calories", "protein", "fat", "carbohydrates"],
+        }
+        
+        prompt_parts = [
+            "Определи еду на этом изображении. Оцени размер порции и предоставь примерную оценку пищевой ценности для порции, показанной на фото. Если на изображении нет еды, укажи это в 'foodName' и установи все значения питательных веществ на 0. Ответ должен быть только в формате JSON.",
+            img,
+        ]
+
+        # Выполняем запрос к API с указанием формата ответа
+        response = model.generate_content(
+            prompt_parts,
+            generation_config=genai.types.GenerationConfig(
+                response_mime_type="application/json",
+                response_schema=nutrition_schema
+            )
+        )
+        
+        # Парсим JSON из текстового ответа
+        return json.loads(response.text)
+
+    except Exception as e:
+        # Логируем ошибку для отладки
+        app.logger.error(f"Error during Gemini API call or image processing: {e}")
+        return None
+
+
+# @app.route('/analyze_food', methods=['GET', 'POST'])
+# def analyze_food():
+#    if request.method == 'POST':
+#         # 1. Проверяем наличие файла
+#         if 'file' not in request.files:
+#             flash('Файл не был отправлен. Пожалуйста, выберите файл.')
+#             return redirect(request.url)
+            
+#         file = request.files['file']
+
+#         # 2. Проверяем, что файл выбран
+#         if file.filename == '':
+#             flash('Файл не был выбран.')
+#             return redirect(request.url)
+            
+#         # 3. Проверяем расширение и сохраняем файл
+#         if file and allowed_file(file.filename):
+#             filename = secure_filename(file.filename)
+#             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            
+#             try:
+#                 file.save(filepath)
+#             except Exception as e:
+#                 flash(f"Ошибка при сохранении файла: {e}")
+#                 return redirect(request.url)
+
+#             # 4. Анализируем изображение
+#             nutrition_data = analyze_image_with_gemini(filepath)
+
+#             # 5. Отображаем результат
+#             if nutrition_data:
+#                 return render_template('photo_analyze.html', filename=filename, data=nutrition_data)
+#             else:
+#                 flash('Не удалось проанализировать изображение. Возможно, файл поврежден или API временно недоступен. Попробуйте другое фото.')
+#                 # Отображаем загруженное изображение даже при ошибке анализа
+#                 return render_template('photo_analyze.html', filename=filename, data=None)
+#         else:
+#             flash('Недопустимый тип файла. Разрешены: png, jpg, jpeg, gif, webp.')
+#             return redirect(request.url)
+
+#     # Для GET-запроса просто отображаем главную страницу
+#     return render_template('photo_analyze.html', filename=None, data=None)
+
+# Duplicate route removed — use the primary `/photo_analyze` definition above (keeps /add_analyzed_food handler).

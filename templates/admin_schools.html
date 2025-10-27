@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Управление школами{% endblock %}
+
+{% block body %}
+<div class="container mt-4">
+  <h2>Школы</h2>
+  <form method="POST" class="row g-2 mb-3">
+    <div class="col-md-5">
+      <input name="name" class="form-control" placeholder="Название школы" required>
+    </div>
+    <div class="col-md-4">
+      <select name="city_id" class="form-select" required>
+        <option value="">— выбирайте город —</option>
+        {% for c in cities %}
+        <option value="{{ c.id }}">{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <button class="btn btn-primary">Добавить школу</button>
+    </div>
+  </form>
+
+  <table class="table table-striped">
+    <thead><tr><th>Город</th><th>Школа</th><th>Действие</th></tr></thead>
+    <tbody>
+      {% for s in schools %}
+      <tr>
+        <td>{{ s.city.name }}</td>
+        <td>{{ s.name }}</td>
+        <td>
+          <form method="post" action="{{ url_for('admin_delete_school', school_id=s.id) }}" style="display:inline">
+            <button class="btn btn-sm btn-danger" onclick="return confirm('Удалить школу?')">Удалить</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

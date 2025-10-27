@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+{% block title %}Добавить ребёнка{% endblock %}
+
+{% block body %}
+<div class="container mt-4">
+  <h2>Добавить аккаунт ребёнка</h2>
+  <form method="POST" class="mt-3">
+    {{ form.hidden_tag() }}
+    <div class="mb-3">
+      <label class="form-label">Логин ребёнка</label>
+      <input type="text" name="login" class="form-control" required>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Пароль</label>
+      <input type="password" name="password" class="form-control" required>
+    </div>
+    <!-- Поле имени удалено: имя не требуется при создании аккаунта ребёнка -->
+    <h4 class="mt-3">Данные для расчёта КБЖУ (необязательно)</h4>
+    <div class="mb-3">
+      <label class="form-label">Пол</label>
+      <select name="gender" class="form-select">
+        <option value="male">Мужской</option>
+        <option value="female">Женский</option>
+      </select>
+    </div>
+    <div class="row g-2">
+      <div class="col-md-3">
+        <label class="form-label">Возраст</label>
+        <input type="number" name="age" class="form-control">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Рост (см)</label>
+        <input type="number" name="height" class="form-control">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Вес (кг)</label>
+        <input type="number" name="weight" class="form-control">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Активность</label>
+        <select name="activity" class="form-select">
+          <option value="1.2">Минимальная</option>
+          <option value="1.375">Лёгкая</option>
+          <option value="1.55">Средняя</option>
+          <option value="1.725">Высокая</option>
+          <option value="1.9">Очень высокая</option>
+        </select>
+      </div>
+    </div>
+    <hr>
+    <h5 class="mt-3">Информация об учебном заведении (необязательно)</h5>
+    <div class="row g-2">
+      <div class="col-md-4">
+        <label class="form-label">Город</label>
+        <select name="city" id="city_select" class="form-select">
+          <option value="">— выберите город —</option>
+          {% for city in cities %}
+            <option value="{{ city.name }}">{{ city.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-5">
+        <label class="form-label">Школа</label>
+        <select name="school" id="school_select" class="form-select">
+          <option value="">— выберите школу —</option>
+          {% for school in schools %}
+            <option value="{{ school.name }}">{{ school.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Класс</label>
+        <select name="grade" id="grade_select" class="form-select">
+          <option value="">— выберите класс —</option>
+          {% for grade in grades %}
+            <option value="{{ grade.name }}">{{ grade.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <!-- Блок показа вычисленной нормы и подсказки -->
+    <div class="mt-3">
+      <div id="child_calc" class="alert alert-info d-none"></div>
+    </div>
+    <script>
+      // Живая калькуляция в форме добавления ребёнка
+      (function(){
+        const fields = ['gender','age','height','weight','activity'];
+        function el(name){ return document.getElementsByName(name)[0]; }
+        function parse(name){ const v = el(name) && el(name).value; return v ? parseFloat(v) : NaN; }
+        function compute(){
+          const g = el('gender') && el('gender').value;
+          const age = parse('age');
+          const height = parse('height');
+          const weight = parse('weight');
+          const activity = parse('activity');
+          const box = document.getElementById('child_calc');
+          if (!g || isNaN(age) || isNaN(height) || isNaN(weight) || isNaN(activity)){
+            box.classList.add('d-none');
+            return;
+          }
+          let bmr;
+          if (g === 'male') bmr = 10 * weight + 6.25 * height - 5 * age + 5;
+          else bmr = 10 * weight + 6.25 * height - 5 * age - 161;
+          const calories = Math.round(bmr * activity);
+          const bmi = weight / ((height/100)*(height/100));
+          let suggestion = '';
+          let recommendedPct = 0;
+          let dietRecommendation = '';
+          
+          // Нормальный диапазон BMI: 18.5 - 25
+          if (bmi) {
+              if (bmi < 18.5) {
+                  // Недовес: чем меньше BMI, тем больше процент увеличения
+                  recommendedPct = Math.min(15, Math.round((18.5 - bmi) * 3));
+                  suggestion = `Необходимо увеличить калорийность на ${recommendedPct}%`;
+                  dietRecommendation = `Рекомендации по питанию: требуется увеличение калорийности на ${recommendedPct}%. ` +
+                      'Добавьте в рацион больше белковой пищи (мясо, рыба, яйца, молочные продукты), ' +
+                      'сложных углеводов (крупы, хлеб из цельного зерна) и полезных жиров (орехи, авокадо, оливковое масло). ' +
+                      'Увеличьте частоту приёмов пищи.';
+              } else if (bmi > 25) {
+                  // Перевес: чем больше BMI, тем больше процент уменьшения
+                  recommendedPct = Math.max(-15, Math.round((25 - bmi) * 2));
+                  suggestion = `Необходимо уменьшить калорийность на ${Math.abs(recommendedPct)}%`;
+                  dietRecommendation = `Рекомендации по питанию: требуется снижение калорийности на ${Math.abs(recommendedPct)}%. ` +
+                      'Уменьшите размер порций, исключите сладкие напитки и фастфуд. ' +
+                      'Увеличьте потребление овощей и нежирного белка. ' +
+                      'Придерживайтесь регулярного режима питания.';
+              } else {
+                  // Нормальный вес
+                  suggestion = 'Калорийность в пределах нормы';
+                  dietRecommendation = 'Рекомендации по питанию: ваш индекс массы тела в норме. ' +
+                      'Поддерживайте текущий режим питания, обеспечивая разнообразный рацион ' +
+                      'со всеми необходимыми питательными веществами.';
+              }
+          }
+
+          const adjustedCalories = recommendedPct ? Math.round(calories * (1 + recommendedPct/100)) : calories;
+          
+          box.innerHTML = `
+            <div class="card">
+              <div class="card-body">
+                <h5 class="card-title">Результаты расчета</h5>
+                <p><strong>Текущая норма:</strong> ${calories} ккал/день</p>
+                <p id="suggestion_text" class="text-primary">${suggestion}</p>
+                ${recommendedPct !== 0 ? `
+                  <div class="alert alert-info">
+                    <strong>Рекомендуемая калорийность:</strong> ${adjustedCalories} ккал/день
+                  </div>
+                ` : ''}
+                <div class="alert alert-success">
+                  ${dietRecommendation}
+                </div>
+                ${recommendedPct !== 0 ? `
+                  <button type="button" class="btn btn-primary btn-sm" id="accept_recommendation">
+                    Принять рекомендованную калорийность ${adjustedCalories} ккал/день
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+            <div id="adj_display" class="mt-2"></div>
+              <input type="hidden" name="calories_override" id="calories_override" value="">
+              <div class="mt-2">
+                <button type="button" id="accept_child_adj" class="btn btn-success btn-sm d-none">Принять</button>
+                <button type="button" id="keep_child_adj" class="btn btn-secondary btn-sm d-none">Оставить как есть</button>
+              </div>
+            </div>`;
+
+          box.classList.remove('d-none');
+
+          // обработчик кнопки принятия рекомендации
+          const acceptBtn = document.getElementById('accept_recommendation');
+          if (acceptBtn) {
+            acceptBtn.addEventListener('click', () => {
+              document.getElementById('calories_override').value = adjustedCalories;
+              document.getElementById('suggestion_text').textContent = 'Применено изменение: установлена калорийность ' + adjustedCalories + ' ккал/день.';
+              acceptBtn.style.display = 'none';
+            });
+          }
+        }
+        fields.forEach(fn => {
+          const f = el(fn);
+          if (f) f.addEventListener('input', compute);
+        });
+      })();
+    </script>
+    <script>
+      // Подгружаем список городов и школ через API
+      const citySelect = document.getElementById('city_select');
+      const schoolSelect = document.getElementById('school_select');
+
+      async function loadCities() {
+        try {
+          const r = await fetch('/api/cities');
+          const data = await r.json();
+          citySelect.innerHTML = '<option value="">— выберите город —</option>';
+          data.forEach(c => {
+            const o = document.createElement('option'); o.value = c.name; o.textContent = c.name; citySelect.appendChild(o);
+          });
+        } catch (e) {
+          console.error('Failed to load cities', e);
+        }
+      }
+
+      async function loadSchoolsForCity(city) {
+        schoolSelect.innerHTML = '<option value="">— выберите школу —</option>';
+        if (!city) return;
+        try {
+          const r = await fetch('/api/schools?city=' + encodeURIComponent(city));
+          const data = await r.json();
+          data.forEach(s => {
+            const o = document.createElement('option'); o.value = s.name; o.textContent = s.name; schoolSelect.appendChild(o);
+          });
+        } catch (e) {
+          console.error('Failed to load schools', e);
+        }
+      }
+
+      citySelect.addEventListener('change', () => loadSchoolsForCity(citySelect.value));
+      document.addEventListener('DOMContentLoaded', async () => {
+        await loadCities();
+        // если есть значение (например при возврате формы) — подгрузим школы
+        if (citySelect.value) await loadSchoolsForCity(citySelect.value);
+      });
+    </script>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="mt-3">
+          {% for category, message in messages %}
+            <div class="alert alert-{{ 'danger' if category == 'error' else category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% if form.errors %}
+      <div class="alert alert-danger mt-2">
+        <ul>
+          {% for field, errors in form.errors.items() %}
+            {% for error in errors %}
+              <li>{{ error }}</li>
+            {% endfor %}
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+    <button class="btn btn-primary">Создать</button>
+    <a class="btn btn-secondary ms-2" href="{{ url_for('dashboard') }}">Отмена</a>
+  </form>
+</div>
+{% endblock %}

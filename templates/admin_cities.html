@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Управление городами{% endblock %}
+
+{% block body %}
+<div class="container mt-4">
+  <h2>Города</h2>
+  <form method="POST" class="row g-2 mb-3">
+    <div class="col-auto">
+      <input name="name" class="form-control" placeholder="Новый город" required>
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-primary">Добавить город</button>
+    </div>
+  </form>
+
+  <table class="table table-striped">
+    <thead><tr><th>Название</th><th>Действие</th></tr></thead>
+    <tbody>
+      {% for c in cities %}
+      <tr>
+        <td>{{ c.name }}</td>
+        <td>
+          <form method="post" action="{{ url_for('admin_delete_city', city_id=c.id) }}" style="display:inline">
+            <button class="btn btn-sm btn-danger" onclick="return confirm('Удалить город?')">Удалить</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
