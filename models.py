@@ -88,12 +88,11 @@ class Eat(db.Model):
     carbs = db.Column(db.Float, nullable=False)
     type = db.Column(db.String(20), nullable=False, default="school")
     image = db.Column(db.String(250), nullable=True)
-    barcode = db.Column(db.String(64), unique=True, nullable=True)
-    week = db.Column(db.Integer, nullable=True)
-    day = db.Column(db.Integer, nullable=True)
+    week = db.Column(db.Integer, nullable=True)  # 1 или 2 для школьной еды
+    day = db.Column(db.Integer, nullable=True)   # 1-7 для школьной еды
 
     def __init__(self, name, calories, protein, fat, carbs, type="school", 
-                 image=None, barcode=None, week=None, day=None):
+                 image=None, week=None, day=None):
         self.name = name
         self.calories = calories
         self.protein = protein
@@ -101,7 +100,6 @@ class Eat(db.Model):
         self.carbs = carbs
         self.type = type
         self.image = image
-        self.barcode = barcode
         self.week = week
         self.day = day
 
@@ -183,3 +181,49 @@ class Admin(db.Model):
     @property
     def is_active(self):
         return True
+
+
+# --- Packs (наборы еды по дням) ---
+class Pack(db.Model):
+    __tablename__ = 'packs'
+    id = db.Column(db.Integer, primary_key=True)
+    week = db.Column(db.Integer, nullable=False)  # Номер недели (1 или 2)
+    day = db.Column(db.Integer, nullable=False)   # День недели (1-7)
+    created_by = db.Column(db.Integer, db.ForeignKey('cooks.id'), nullable=True)
+
+    def __init__(self, week, day, created_by=None):
+        self.week = week
+        self.day = day
+        self.created_by = created_by
+
+    @property
+    def name(self):
+        """Автоматическое формирование названия пака"""
+        days = {
+            1: 'Понедельник',
+            2: 'Вторник',
+            3: 'Среда',
+            4: 'Четверг',
+            5: 'Пятница',
+            6: 'Суббота',
+            7: 'Воскресенье'
+        }
+        return f"Неделя {self.week}, {days.get(self.day, str(self.day))}"
+
+
+class PackItem(db.Model):
+    __tablename__ = 'pack_items'
+    id = db.Column(db.Integer, primary_key=True)
+    pack_id = db.Column(db.Integer, db.ForeignKey('packs.id'), nullable=False)
+    food_id = db.Column(db.Integer, db.ForeignKey('eat.id'), nullable=False)
+    ord = db.Column(db.Integer, nullable=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    pack = db.relationship('Pack', backref='items')
+    food = db.relationship('Eat')
+
+    def __init__(self, pack_id, food_id, ord=None, is_active=True):
+        self.pack_id = pack_id
+        self.food_id = food_id
+        self.ord = ord
+        self.is_active = is_active

@@ -4,6 +4,11 @@
 
 {% block body %}
 <div class="container py-4">
+    <div class="mb-3">
+        <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> {{ t('back') or 'Назад' }}
+        </a>
+    </div>
     <div class="row">
         <div class="col-md-8 offset-md-2">
             <h2 class="mb-3">{{ t('photo.food_analyzer') or 'Анализатор еды по фото' }}</h2>
@@ -22,12 +27,12 @@
                 </div>
             </div>
 
-            {% if filename %}
+            {% if filename or data_url %}
                 <div class="card mb-3">
                     <div class="card-body">
                         <h5 class="card-title">{{ t('photo.uploaded_photo') or 'Загруженное фото' }}</h5>
                         <div class="mb-3">
-                            <img src="{{ url_for('static', filename='uploads/' ~ filename) }}" alt="uploaded" class="img-fluid" style="max-height:400px;object-fit:contain;">
+                            <img src="{{ data_url if data_url else url_for('static', filename='uploads/' ~ filename) }}" alt="uploaded" class="img-fluid" style="max-height:400px;object-fit:contain;">
                         </div>
                         {% if data %}
                             <h6>{{ t('photo.analysis_result') or 'Результат анализа' }}</h6>
@@ -38,18 +43,25 @@
                                 <li class="list-group-item">{{ t('food.carbs') or 'Углеводы' }}: <strong>{{ data.carbs }}</strong> {{ t('grams') or 'г' }}</li>
                             </ul>
 
-                            <form action="{{ url_for('add_analyzed_food') }}" method="post">
-                                <input type="hidden" name="name" value="{{ data.name or (data.label or 'Проанализированное блюдо') }}">
-                                <input type="hidden" name="calories" value="{{ data.calories or 0 }}">
-                                <input type="hidden" name="protein" value="{{ data.protein or 0 }}">
-                                <input type="hidden" name="fat" value="{{ data.fat or 0 }}">
-                                <input type="hidden" name="carbs" value="{{ data.carbs or 0 }}">
-                                <input type="hidden" name="serving_size" value="{{ data.serving_size or '100г' }}">
-                                {% if target_student_id %}
-                                    <input type="hidden" name="student_id" value="{{ target_student_id }}">
-                                {% endif %}
-                                <button class="btn btn-success">{{ t('photo.add_to_diary') or 'Добавить в дневник' }}</button>
-                            </form>
+                            {% if is_authorized %}
+                                <form action="{{ url_for('add_analyzed_food') }}" method="post">
+                                    <input type="hidden" name="name" value="{{ data.name or (data.label or 'Проанализированное блюдо') }}">
+                                    <input type="hidden" name="calories" value="{{ data.calories or 0 }}">
+                                    <input type="hidden" name="protein" value="{{ data.protein or 0 }}">
+                                    <input type="hidden" name="fat" value="{{ data.fat or 0 }}">
+                                    <input type="hidden" name="carbs" value="{{ data.carbs or 0 }}">
+                                    <input type="hidden" name="serving_size" value="{{ data.serving_size or '100г' }}">
+                                    {% if target_student_id %}
+                                        <input type="hidden" name="student_id" value="{{ target_student_id }}">
+                                    {% endif %}
+                                    <button class="btn btn-success">{{ t('photo.add_to_diary') or 'Добавить в дневник' }}</button>
+                                </form>
+                            {% else %}
+                                <div class="alert alert-info mt-3">
+                                    {{ t('photo.login_to_add') or 'Чтобы добавить в дневник, необходимо' }} 
+                                    <a href="{{ url_for('login') }}" class="alert-link">{{ t('auth.login') or 'войти в систему' }}</a>
+                                </div>
+                            {% endif %}
 
                         {% else %}
                             <div class="alert alert-warning">{{ t('photo.analysis_failed') or 'Не удалось проанализировать изображение' }}</div>

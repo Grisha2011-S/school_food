@@ -1,12 +1,11 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, g, send_from_directory
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, g, send_from_directory, send_file
 from datetime import timedelta, datetime, date
 from flask_caching import Cache
 from models import db, Parents, Student, Cook, Eat, EatLog
-from models import City, School, Grade, Admin
+from models import City, School, Grade, Admin, Pack, PackItem
 from admin_utils import verify_admin, create_admin, activate_admin
 from forms import ChildForm, FoodForm
 from nutrition_calc import calculate_nutrition, validate_measurements
-from food_detection_impl import analyze_image_with_gemini
 import time
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -16,6 +15,8 @@ from sqlalchemy.exc import SQLAlchemyError
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+import io
+import binascii
 try:
     # dotenv_values allows reading .env files without touching os.environ
     from dotenv import dotenv_values
@@ -24,6 +25,8 @@ except Exception:
 import io
 import csv
 from flask import make_response
+from roles_map import get_role_display
+import binascii
 
 # Настройка логирования
 import logging
@@ -37,6 +40,27 @@ logger = logging.getLogger(__name__)
 # Инициализация Flask приложения
 app = Flask(__name__)
 logger.info("Starting Flask application...")
+
+# Lazy holder for optional image analysis function. We'll import on demand to avoid
+# startup failures when Pillow/NumPy or external SDKs are missing.
+app._analyze_image = None
+
+def _ensure_analyze_image_loaded():
+    """Try to import analyze_image_with_gemini into app._analyze_image.
+
+    Returns True if loaded, False otherwise.
+    """
+    if getattr(app, '_analyze_image', None):
+        return True
+    try:
+        from food_detection_impl import analyze_image_with_gemini as _func
+        app._analyze_image = _func
+        app.logger.info('Image analysis module loaded')
+        return True
+    except Exception:
+        app.logger.exception('Failed to import analyze_image_with_gemini; image analysis disabled')
+        app._analyze_image = None
+        return False
 
 # Базовая конфигурация
 try:
@@ -127,6 +151,83 @@ def with_translations(f):
         return f(*args, **kwargs)
     return decorated_function
 
+# Функция проверки флешки
+def check_admin_flash_drive():
+    """
+    Проверяет наличие специальной флешки для админа.
+    Флешка должна содержать файл admin_key.txt с правильным ключом.
+    """
+    try:
+        # Проверяем наличие флешки (Windows)
+        import win32file
+        app.logger.info("=== Начинаем проверку флешек ===")
+
+        # Ожидаемый ключ админа
+        ADMIN_KEY = "admin123"  # Замените на ваш секретный ключ
+
+        # Получаем битовую маску подключенных дисков
+        drives = win32file.GetLogicalDrives()
+        app.logger.info(f"Обнаружена битовая маска дисков: {bin(drives)}")
+
+        # Перебираем все возможные буквы дисков (A-Z)
+        for i in range(26):
+            if drives & (1 << i):
+                drive_letter = chr(65 + i) + ':\\'
+                try:
+                    # Определяем тип диска
+                    drive_type = win32file.GetDriveType(drive_letter)
+                    app.logger.info(f"Диск {drive_letter} - Тип: {drive_type} "
+                                  f"(REMOVABLE={win32file.DRIVE_REMOVABLE}, "
+                                  f"FIXED={win32file.DRIVE_FIXED}, "
+                                  f"REMOTE={win32file.DRIVE_REMOTE}, "
+                                  f"CDROM={win32file.DRIVE_CDROM}, "
+                                  f"RAMDISK={win32file.DRIVE_RAMDISK})")
+
+                    # Проверяем, является ли диск съемным (флешкой)
+                    if drive_type == win32file.DRIVE_REMOVABLE:
+                        app.logger.info(f"Найден съемный диск: {drive_letter}")
+
+                        # Проверяем наличие файла ключа
+                        key_path = os.path.join(drive_letter, 'admin_key.txt')
+                        app.logger.info(f"Проверяем наличие файла: {key_path}")
+
+                        if os.path.exists(key_path):
+                            app.logger.info(f"Файл найден: {key_path}")
+                            try:
+                                with open(key_path, 'r', encoding='utf-8') as f:
+                                    key = f.read().strip()
+                                    app.logger.info(f"Файл прочитан, длина ключа: {len(key)}")
+
+                                    # Сравниваем с ожидаемым ключом
+                                    if key == ADMIN_KEY:
+                                        app.logger.info("=== Найдена флешка администратора с верным ключом ===")
+                                        return ADMIN_KEY
+
+                            except Exception as e:
+                                app.logger.error(f"Ошибка при чтении файла {key_path}: {str(e)}")
+                        else:
+                            app.logger.info(f"Файл не найден: {key_path}")
+
+                except Exception as e:
+                    app.logger.error(f"Ошибка при проверке диска {drive_letter}: {str(e)}")
+                    continue
+
+        app.logger.info("=== Проверка завершена, флешка админа не найдена ===")
+        return False
+
+    except ImportError:
+        app.logger.error("Модуль win32file не установлен. Установите его с помощью: pip install pywin32")
+        return False
+    except Exception as e:
+        app.logger.error(f"Критическая ошибка при проверке флешки: {str(e)}")
+        return False
+
+# Проверка наличия необходимых модулей
+try:
+    import win32file
+except ImportError:
+    app.logger.error("Модуль win32file не установлен. Установите его с помощью: pip install pywin32")
+
 # Регистрируем декоратор для всех роутов
 @app.before_request
 def before_request():
@@ -140,6 +241,31 @@ def before_request():
             session['language'] = cookie_lang
             session.permanent = True
             lang = cookie_lang
+    
+    app.logger.info(f"Текущая роль: {session.get('role')}")
+            
+    # Проверяем наличие админа в базе при первом запуске
+    if not hasattr(app, '_admin_checked'):
+        app.logger.info("Проверка наличия админа в базе...")
+        admin = Admin.query.first()
+        if not admin:
+            app.logger.info("Создаем первого админа...")
+            admin_login = "admin"
+            admin_password = "admin123"  # Начальный пароль
+            try:
+                admin = Admin(
+                    login=admin_login,
+                    password=generate_password_hash(admin_password),
+                    is_master=True
+                )
+                db.session.add(admin)
+                db.session.commit()
+                app.logger.info(f"Создан первый админ с логином: {admin_login} и паролем: {admin_password}")
+                print(f"\n\nСоздан первый админ:\nЛогин: {admin_login}\nПароль: {admin_password}\n\n")
+            except Exception as e:
+                app.logger.error(f"Ошибка при создании админа: {str(e)}")
+                db.session.rollback()
+        app._admin_checked = True
         
     current_lang = lang or 'ru'
     g.lang = current_lang
@@ -193,7 +319,9 @@ def utility_processor():
 
         return current if current is not None else ''
 
-    return dict(t=translate)
+    # expose role display helper to templates
+    # get_role_display можно вызывать в шаблонах как {{ get_role_display('cook') }}
+    return dict(t=translate, get_role_display=get_role_display)
 
 # Роут для изменения языка
 @app.route('/lang/<lang>')
@@ -268,12 +396,36 @@ def safe_commit():
 from functools import wraps
 
 def login_required(role=None):
+    """
+    Декоратор проверки авторизации.
+
+    - Если role is None: достаточно быть залогиненным (любая роль).
+    - Если role задан (строка или список/кортеж/множество) — роль в сессии должна быть в разрешённых.
+    Перенаправляет на "admin_login" только когда ожидаемая роль содержит 'admin',
+    в остальных случаях использует стандартный маршрут 'login'.
+    """
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            if 'user_id' not in session or session.get('role') != role:
-                flash('Доступ запрещён!')
-                return redirect(url_for('admin_login'))
+            # пользователь не залогинен
+            if 'user_id' not in session:
+                flash('Сначала войдите в систему.', 'error')
+                # Используем общий маршрут входа для всех ролей
+                return redirect(url_for('login'))
+
+            # если ожидается конкретная роль — проверим соответствие
+            if role:
+                # нормализуем allowed_roles в список
+                if isinstance(role, (list, tuple, set)):
+                    allowed = set(role)
+                else:
+                    allowed = {role}
+
+                if session.get('role') not in allowed:
+                    flash('Доступ запрещён!', 'error')
+                    # Перенаправляем на общий вход
+                    return redirect(url_for('login'))
+
             return f(*args, **kwargs)
         return decorated_function
     return decorator
@@ -657,10 +809,9 @@ def login():
             session['user_id'] = admin.id
             session['role'] = 'admin'
             session.permanent = True  # Сессия будет жить до выхода
-            flash('Добро пожаловать, администратор!')
             return redirect(url_for('dashboard'))
         elif "не активирован" in message:
-            flash('Аккаунт администратора не активирован.')
+            flash('Аккаунт администратора не активирован.', 'error')
             return redirect(url_for('admin_activation'))
 
         # Проверяем сначала студента/учителя
@@ -691,13 +842,13 @@ def login():
             flash('Добро пожаловать, родитель!')
             return redirect(url_for('dashboard'))
 
-        # Проверяем повара
+    # Проверяем Диетсестра
         user = Cook.query.filter_by(login=login).first()  # Изменено с logine на login
         if user and check_password_hash(user.password, password):
             session['user_id'] = user.id
             session['role'] = 'cook'
             session.permanent = True
-            flash('Добро пожаловать, повар!')
+            flash(f"Добро пожаловать, {get_role_display('cook')}!")
             return redirect(url_for('dashboard'))
 
         flash('Неверный логин или пароль.', 'error')
@@ -776,6 +927,7 @@ def dashboard():
         }
 
     elif role == 'cook':
+        user = Cook.query.get(user_id)
         if not user:
             session.clear()
             flash('Ошибка: пользователь не найден.')
@@ -784,6 +936,7 @@ def dashboard():
             'role': 'cook',
             'login': user.login
         }
+
 
     else:
         flash('Неизвестная роль.')
@@ -833,16 +986,30 @@ def update_calories():
 # ---------------- Страница выбора еды ----------------
 
 @app.route('/eat', methods=['GET', 'POST'])
-@login_required(role='student')
+@login_required()
 def eat():
+    # Только ученики и учителя могут использовать выбор еды
+    if session.get('role') not in ('student', 'teacher'):
+        flash('Доступ запрещён', 'error')
+        return redirect(url_for('login'))
 
     # Обработка поискового запроса (GET-параметр q)
     q = request.args.get('q', '').strip()
     barcode_q = request.args.get('barcode', '').strip()
 
     # Если задан штрихкод — ищем точное совпадение по barcode
+    # Вычисляем текущую неделю/день для фильтрации школьного меню
+    today = date.today()
+    reference_date = date(2025, 1, 1)
+    weeks_since = (today - reference_date).days // 7
+    week = (weeks_since % 2) + 1
+    weekday = today.weekday()  # 0=Mon .. 6=Sun
+    day = weekday + 1
+
     if barcode_q:
         foods = Eat.query.filter_by(barcode=barcode_q).all()
+        school_foods = [f for f in foods if f.type == 'school']
+        other_foods = [f for f in foods if f.type != 'school']
     elif q:
         # Используем case-insensitive поиск через LIKE для SQLite
         search_pattern = f"%{q}%"
@@ -852,8 +1019,20 @@ def eat():
                 Eat.type.ilike(search_pattern)
             )
         ).all()
+        school_foods = [f for f in foods if f.type == 'school' and getattr(f, 'week', None) == week and getattr(f, 'day', None) == day]
+        other_foods = [f for f in foods if f.type != 'school']
     else:
-        foods = Eat.query.all()  # показываем и школьную, и обычную
+        # По умолчанию показываем школьную еду только для текущей недели/дня и все прочие продукты
+        school_foods = Eat.query.filter_by(type='school', week=week, day=day).all()
+        other_foods = Eat.query.filter(Eat.type != 'school').all()
+
+    # Объединяем найденные наборы в единый список для шаблона.
+    # Это гарантирует, что переменная `foods` всегда определена (даже если пустая).
+    try:
+        foods = list(school_foods) + list(other_foods)
+    except Exception:
+        # на случай, если переменные не определены по какой-то причине — обеспечим безопасный fallback
+        foods = []
 
     if request.method == 'POST':
         try:
@@ -928,7 +1107,7 @@ def eat():
 
         return redirect(url_for('eat'))
 
-    return render_template('eat.html', foods=foods)
+    return render_template('eat.html', foods=foods, school_foods=school_foods, other_foods=other_foods, week=week, day=day)
 
 
 # ---------------- Главная ----------------
@@ -949,74 +1128,136 @@ def index():
     # Показать школьное меню для сегодняшнего рабочего дня по двухнедельному циклу
     today = date.today()
     weekday = today.weekday()  # 0=Mon .. 6=Sun
+
+    # определяем двунедельный цикл: рассчитываем количество недель от опорной даты
+    # Принято: цикл начинается от 2025-01-01. Если нужно другое начало — поменяйте reference_date.
+    reference_date = date(2025, 1, 1)
+    weeks_since = (today - reference_date).days // 7
+    week = (weeks_since % 2) + 1
+    day = weekday + 1
+
     foods_today = []
     if weekday <= 6:  # include Sunday for testing (0=Mon .. 6=Sun)
-        # определяем двунедельный цикл: рассчитываем количество недель от опорной даты
-        # Принято: цикл начинается от 2025-01-01. Если нужно другое начало — поменяйте reference_date.
-        reference_date = date(2025, 1, 1)
-        weeks_since = (today - reference_date).days // 7
-        week = (weeks_since % 2) + 1
-        day = weekday + 1
         foods_today = Eat.query.filter_by(type='school', week=week, day=day).all()
 
-    return render_template('index.html', foods_today=foods_today)
+    # Передаём текущую неделю и день в шаблон, чтобы показывать пользователю
+    return render_template('index.html', foods_today=foods_today, week=week, day=day, today=today)
 
-# ---------------- Управление школьной едой для повара ----------------
+# ---------------- Управление школьной едой для Диетсестра ----------------
+def ensure_packs_exist(cook_id):
+    """Создает 14 паков (2 недели × 7 дней), если они еще не существуют"""
+    for week in (1, 2):
+        for day in range(1, 8):  # 1-7
+            pack = Pack.query.filter_by(week=week, day=day).first()
+            if not pack:
+                pack = Pack(week=week, day=day, created_by=cook_id)
+                db.session.add(pack)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception('Failed to create packs')
+
 @app.route('/cook_menu', methods=['GET', 'POST'])
 def cook_menu():
     if 'user_id' not in session or session.get('role') != 'cook':
         flash("Доступ запрещён!")
         return redirect(url_for('login'))
 
-    foods = Eat.query.filter_by(type='school').all()
+    # Убедимся, что паки для всех дней существуют
+    ensure_packs_exist(session.get('user_id'))
+
+    foods = Eat.query.filter_by(type='school').order_by(Eat.week, Eat.day).all()
+    packs = Pack.query.order_by(Pack.week, Pack.day).all()
 
     if request.method == 'POST':
         action = request.form.get('action')
 
+        if action == 'toggle_pack_item':
+            try:
+                item_id = int(request.form.get('item_id'))
+                item = PackItem.query.get_or_404(item_id)
+                item.is_active = not item.is_active
+                db.session.commit()
+                flash('Статус элемента обновлен', 'success')
+            except Exception:
+                db.session.rollback()
+                flash('Ошибка при обновлении статуса', 'error')
+            return redirect(url_for('cook_menu'))
+
+        if action == 'remove_pack_item':
+            try:
+                item_id = int(request.form.get('item_id'))
+                item = PackItem.query.get_or_404(item_id)
+                db.session.delete(item)
+                db.session.commit()
+                flash('Элемент удален из пака', 'success')
+            except Exception:
+                db.session.rollback()
+                flash('Ошибка при удалении элемента', 'error')
+            return redirect(url_for('cook_menu'))
+            
+        # === Управление продуктами ===
         if action == 'add':
             name = request.form.get('name')
             calories = safe_float(request.form.get('calories'))
             protein = safe_float(request.form.get('protein'))
             fat = safe_float(request.form.get('fat'))
             carbs = safe_float(request.form.get('carbs'))
-            # Для школьной еды можно указать неделю и день (1..2 и 1..5)
+            
             try:
-                try:
-                    week = int(request.form.get('week') or 0) or None
-                except ValueError:
+                week = int(request.form.get('week') or 0)
+                if week not in (1, 2):
                     week = None
             except Exception:
                 week = None
 
             try:
-                try:
-                    day = int(request.form.get('day') or 0) or None
-                except ValueError:
+                day = int(request.form.get('day') or 0)
+                if not (1 <= day <= 7):
                     day = None
             except Exception:
                 day = None
-            # Обработка файла изображения (при загрузке с телефона)
-            image = request.form.get('image')  # по умолчанию текстовое поле
+
+            # Обработка файла изображения
             file = request.files.get('image_file')
             filename = None
             if file and file.filename and allowed_file(file.filename):
                 fname = secure_filename(file.filename)
-                # добавить префикс времени для уникальности
                 import time
                 fname = f"{int(time.time())}_{fname}"
                 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
                 file.save(str(UPLOAD_FOLDER / fname))
                 filename = fname
 
-            img_field = filename if filename else (image or None)
-            new_food = Eat(name=name, calories=calories, protein=protein,
-                           fat=fat, carbs=carbs, type='school', image=img_field, week=week, day=day)
-            barcode = request.form.get('barcode')
-            if barcode:
-                new_food.barcode = barcode.strip()
-            db.session.add(new_food)
-            db.session.commit()
-            flash(f"Продукт {name} добавлен!")
+            try:
+                new_food = Eat(name=name, calories=calories, protein=protein,
+                             fat=fat, carbs=carbs, type='school', 
+                             image=filename, week=week, day=day)
+                db.session.add(new_food)
+                db.session.flush()  # чтобы получить id
+
+                # Если указаны неделя и день - автоматически добавляем в соответствующий пак
+                if week and day:
+                    pack = Pack.query.filter_by(week=week, day=day).first()
+                    if not pack:
+                        pack = Pack(week=week, day=day, created_by=session.get('user_id'))
+                        db.session.add(pack)
+                        db.session.flush()
+                    
+                    # Находим максимальный порядковый номер
+                    max_ord = db.session.query(db.func.max(PackItem.ord)).filter_by(pack_id=pack.id).scalar() or 0
+                    
+                    # Добавляем блюдо в пак
+                    pack_item = PackItem(pack_id=pack.id, food_id=new_food.id, ord=max_ord + 1)
+                    db.session.add(pack_item)
+
+                db.session.commit()
+                flash(f"Продукт {name} добавлен!")
+            except Exception as e:
+                db.session.rollback()
+                app.logger.exception('Failed to add food')
+                flash('Ошибка при добавлении продукта', 'error')
 
         elif action == 'edit':
             try:
@@ -1024,32 +1265,36 @@ def cook_menu():
             except ValueError:
                 flash('Некорректный ID блюда')
                 return redirect(url_for('cook_menu'))
+                
             food = Eat.query.get(food_id)
             if food:
+                old_week = food.week
+                old_day = food.day
+                
                 food.name = request.form.get('name')
                 food.calories = safe_float(request.form.get('calories'))
                 food.protein = safe_float(request.form.get('protein'))
                 food.fat = safe_float(request.form.get('fat'))
                 food.carbs = safe_float(request.form.get('carbs'))
-                # barcode
-                food.barcode = request.form.get('barcode') or None
-                # week/day при редактировании
-                try:
-                    try:
-                        food.week = int(request.form.get('week') or 0) or None
-                    except ValueError:
-                        food.week = None
-                except Exception:
-                    food.week = None
 
                 try:
-                    try:
-                        food.day = int(request.form.get('day') or 0) or None
-                    except ValueError:
-                        food.day = None
+                    week = int(request.form.get('week') or 0)
+                    if week not in (1, 2):
+                        week = None
                 except Exception:
-                    food.day = None
-                # если загружен файл — сохраняем и подменяем
+                    week = None
+
+                try:
+                    day = int(request.form.get('day') or 0)
+                    if not (1 <= day <= 7):
+                        day = None
+                except Exception:
+                    day = None
+
+                food.week = week
+                food.day = day
+
+                # Обработка файла изображения
                 file = request.files.get('image_file')
                 if file and file.filename and allowed_file(file.filename):
                     fname = secure_filename(file.filename)
@@ -1058,10 +1303,32 @@ def cook_menu():
                     UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
                     file.save(str(UPLOAD_FOLDER / fname))
                     food.image = fname
-                else:
-                    food.image = request.form.get('image')
-                db.session.commit()
-                flash(f"Продукт {food.name} обновлён!")
+
+                try:
+                    # Если изменились неделя/день - обновляем привязку к паку
+                    if (old_week != week or old_day != day) and week and day:
+                        # Удаляем из старого пака
+                        PackItem.query.filter_by(food_id=food.id).delete()
+                        
+                        # Добавляем в новый пак
+                        pack = Pack.query.filter_by(week=week, day=day).first()
+                        if not pack:
+                            pack = Pack(week=week, day=day, created_by=session.get('user_id'))
+                            db.session.add(pack)
+                            db.session.flush()
+                        
+                        # Находим максимальный порядковый номер
+                        max_ord = db.session.query(db.func.max(PackItem.ord)).filter_by(pack_id=pack.id).scalar() or 0
+                        
+                        # Добавляем блюдо в пак
+                        pack_item = PackItem(pack_id=pack.id, food_id=food.id, ord=max_ord + 1)
+                        db.session.add(pack_item)
+
+                    db.session.commit()
+                    flash(f"Продукт {food.name} обновлён!")
+                except Exception:
+                    db.session.rollback()
+                    flash('Ошибка при обновлении продукта', 'error')
 
         elif action == 'delete':
             try:
@@ -1069,15 +1336,161 @@ def cook_menu():
             except ValueError:
                 flash('Некорректный ID блюда')
                 return redirect(url_for('cook_menu'))
+            
             food = Eat.query.get(food_id)
             if food:
-                db.session.delete(food)
-                db.session.commit()
-                flash(f"Продукт {food.name} удалён!")
+                try:
+                    # Сначала удаляем все связи с паками
+                    PackItem.query.filter_by(food_id=food.id).delete()
+                    db.session.delete(food)
+                    db.session.commit()
+                    flash(f"Продукт {food.name} удалён!")
+                except Exception:
+                    db.session.rollback()
+                    flash('Ошибка при удалении продукта', 'error')
 
         return redirect(url_for('cook_menu'))
 
-    return render_template('cook_menu.html', foods=foods)
+    return render_template('cook_menu.html', foods=foods, packs=packs)
+
+
+@app.route('/pack_scan')
+def pack_scan():
+    """Страница просмотра пака по ссылке/QR (публичная)."""
+    try:
+        pack_id = request.args.get('pack_id', type=int)
+        barcode = request.args.get('barcode')
+        pack = None
+        if pack_id:
+            pack = Pack.query.get(pack_id)
+        elif barcode:
+            pack = Pack.query.filter_by(barcode=str(barcode).strip()).first()
+        if not pack:
+            flash('Пак не найден', 'error')
+            return redirect(url_for('index'))
+
+        items = PackItem.query.filter_by(pack_id=pack.id).order_by(PackItem.ord).all()
+        logged_in = 'user_id' in session
+        current_role = session.get('role')
+        return render_template('pack_scan.html', pack=pack, items=items, logged_in=logged_in, current_role=current_role)
+    except Exception as e:
+        app.logger.exception('Error in pack_scan')
+        flash('Ошибка при отображении пака', 'error')
+        return redirect(url_for('index'))
+
+
+@app.route('/pack_add', methods=['POST'])
+@login_required(role=['student', 'parent'])
+def pack_add():
+    """Добавить один продукт или весь пак в дневник пользователя (для student или parent).
+    POST params: food_id or pack_id, optional student_id (when parent adds for child)
+    """
+    try:
+        role = session.get('role')
+        target_student_id = None
+        if role == 'parent' and request.form.get('student_id'):
+            try:
+                target_student_id = int(request.form.get('student_id'))
+            except Exception:
+                target_student_id = None
+            # verify ownership
+            if target_student_id:
+                parent_id = get_session_user_id()
+                child = Student.query.get(target_student_id)
+                if not child or child.parent_id != parent_id:
+                    flash('Ребёнок не найден или доступ запрещён', 'error')
+                    return redirect(url_for('parent_children'))
+
+        def add_log_for_student(sid, food_obj):
+            try:
+                # for school-type foods use fixed portion
+                calories = round(safe_float(food_obj.calories), 1)
+                protein = round(safe_float(food_obj.protein), 1)
+                fat = round(safe_float(food_obj.fat), 1)
+                carbs = round(safe_float(food_obj.carbs), 1)
+                log = EatLog(student_id=sid, food_id=food_obj.id, name=food_obj.name,
+                             calories=calories, protein=protein, fat=fat, carbs=carbs)
+                db.session.add(log)
+                db.session.commit()
+                return True
+            except Exception:
+                db.session.rollback()
+                return False
+
+        # single food
+        food_id = request.form.get('food_id')
+        if food_id:
+            try:
+                fid = int(food_id)
+            except Exception:
+                flash('Некорректный ID блюда', 'error')
+                return redirect(url_for('index'))
+            food = Eat.query.get(fid)
+            if not food:
+                flash('Блюдо не найдено', 'error')
+                return redirect(url_for('index'))
+
+            if role == 'student' and not target_student_id:
+                sid = get_session_user_id()
+                ok = add_log_for_student(sid, food)
+                if ok:
+                    session['calories'] = round(session.get('calories', 0) - safe_float(food.calories), 1)
+                    session['protein'] = round(session.get('protein', 0) - safe_float(food.protein), 1)
+                    session['fat'] = round(session.get('fat', 0) - safe_float(food.fat), 1)
+                    session['carbs'] = round(session.get('carbs', 0) - safe_float(food.carbs), 1)
+                    session.modified = True
+                    flash(f'Добавлено: {food.name}')
+                else:
+                    flash('Ошибка при добавлении', 'error')
+                return redirect(url_for('dashboard'))
+            else:
+                # parent adding for child
+                sid = target_student_id if target_student_id else get_session_user_id()
+                ok = add_log_for_student(sid, food)
+                if ok:
+                    flash(f'Блюдо {food.name} добавлено в дневник')
+                else:
+                    flash('Ошибка при добавлении', 'error')
+                return redirect(url_for('parent_children') if role == 'parent' else url_for('dashboard'))
+
+        # pack add all
+        pack_id = request.form.get('pack_id')
+        if pack_id:
+            try:
+                pid = int(pack_id)
+            except Exception:
+                flash('Некорректный ID пака', 'error')
+                return redirect(url_for('index'))
+            pack = Pack.query.get(pid)
+            if not pack:
+                flash('Пак не найден', 'error')
+                return redirect(url_for('index'))
+            items = PackItem.query.filter_by(pack_id=pack.id).all()
+            # determine target student id
+            if role == 'student' and not target_student_id:
+                sid = get_session_user_id()
+            else:
+                sid = target_student_id if target_student_id else get_session_user_id()
+            added = 0
+            for it in items:
+                food = Eat.query.get(it.food_id)
+                if food:
+                    if add_log_for_student(sid, food):
+                        added += 1
+                        # if current session belongs to that student, update session totals
+                        if sid == session.get('user_id'):
+                            session['calories'] = round(session.get('calories', 0) - safe_float(food.calories), 1)
+                            session['protein'] = round(session.get('protein', 0) - safe_float(food.protein), 1)
+                            session['fat'] = round(session.get('fat', 0) - safe_float(food.fat), 1)
+                            session['carbs'] = round(session.get('carbs', 0) - safe_float(food.carbs), 1)
+                            session.modified = True
+            flash(f'Добавлено {added} блюд из пака')
+            return redirect(url_for('dashboard') if role == 'student' else url_for('parent_children'))
+
+    except Exception as e:
+        app.logger.exception('Error in pack_add')
+        flash('Произошла ошибка при добавлении', 'error')
+    return redirect(url_for('index'))
 
 
 @app.route('/scan')
@@ -1385,15 +1798,72 @@ def parent_children():
                          child_summaries=child_summaries)
 
 
+from services.google_sheets import create_nutrition_report
+
+
+@app.route('/api/admin_login', methods=['POST'])
+def admin_login_api():
+    """API endpoint для входа админа через консоль браузера"""
+    try:
+        data = request.get_json()
+        login = data.get('login')
+        password = data.get('password')
+        
+        if not login or not password:
+            return jsonify({'success': False, 'error': 'Требуется логин и пароль'})
+            
+        admin = Admin.query.filter_by(login=login).first()
+        if admin and check_password_hash(admin.password, password):
+            session['user_id'] = admin.id
+            session['role'] = 'admin'
+            session.permanent = True
+            return jsonify({'success': True, 'redirect': url_for('dashboard')})
+        else:
+            return jsonify({'success': False, 'error': 'Неверный логин или пароль'})
+            
+    except Exception as e:
+        app.logger.exception('Ошибка при входе админа через API')
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/adm/<login>/<password>')
+def admin_quick_login(login, password):
+    """Быстрый GET-роут для входа админа по URL: /adm/<login>/<password>
+    При успешной аутентификации сразу редиректит на панель администратора.
+    """
+    try:
+        admin = Admin.query.filter_by(login=login).first()
+        if admin and check_password_hash(admin.password, password):
+            session['user_id'] = admin.id
+            session['role'] = 'admin'
+            session.permanent = True
+            app.logger.info(f'Quick admin login: {login}')
+            return redirect(url_for('admin_dashboard'))
+        else:
+            flash('Неверный логин или пароль', 'error')
+            return redirect(url_for('login'))
+    except Exception:
+        app.logger.exception('Ошибка при быстром входе админа')
+        flash('Ошибка при входе', 'error')
+        return redirect(url_for('login'))
+
 @app.route('/parent/child/<int:student_id>/export')
 @login_required(role='parent')
 def export_child_year(student_id: int):
-    """Экспортирует логи питания ребёнка за последний год в CSV (Excel) или Word (HTML в .doc).
-
-    Параметры query: fmt=excel|word (по умолчанию excel)
+    """Экспортирует логи питания ребёнка за последний год в Google Sheets.
+    
+    Параметры query: fmt=excel|word|sheets (по умолчанию sheets)
     Доступен только родителю, у которого этот ребёнок привязан.
     """
-    fmt = request.args.get('fmt', 'excel').lower()
+    fmt = request.args.get('fmt', 'sheets').lower()
+    # Early-entry diagnostic log: confirm request reached export handler
+    try:
+        app.logger.info(
+            f"EXPORT ENTRY: student_id={student_id} user_id={session.get('user_id')} role={session.get('role')} "
+            f"remote={request.remote_addr} UA={request.headers.get('User-Agent')[:200]} fmt={fmt}"
+        )
+    except Exception:
+        app.logger.exception('Failed to write EXPORT ENTRY log')
     # Проверка прав: родитель должен владеть ребёнком
     try:
         parent_id = get_session_user_id()
@@ -1415,6 +1885,35 @@ def export_child_year(student_id: int):
         EatLog.created_at <= now
     ).order_by(EatLog.created_at.asc()).all()
 
+    # Целевые показатели (нормы) — делаем их доступными для всех форматов
+    targets = {
+        'calories': float(child.calories or 2000),
+        'protein': float(child.protein or 75),
+        'fat': float(child.fat or 60),
+        'carbs': float(child.carbs or 250)
+    }
+
+    if fmt == 'sheets':
+        # Преобразуем логи в формат для Google Sheets
+        logs_data = [{
+            'created_at': log.created_at,
+            'name': log.name,
+            'calories': float(log.calories or 0),
+            'protein': float(log.protein or 0),
+            'fat': float(log.fat or 0),
+            'carbs': float(log.carbs or 0)
+        } for log in logs]
+
+        # Целевые показатели уже сформированы выше in `targets`
+
+        # Создаем отчет
+        sheet_url = create_nutrition_report(child.login, logs_data, targets)
+        if sheet_url:
+            return redirect(sheet_url)
+        else:
+            flash('Ошибка при создании отчета в Google Sheets', 'error')
+            return redirect(url_for('parent_children'))
+
     # Подготавливаем сводные данные
     total_cal = sum(safe_float(l.calories) for l in logs)
     total_prot = sum(safe_float(l.protein) for l in logs)
@@ -1427,21 +1926,286 @@ def export_child_year(student_id: int):
     base_name = f"{child.login}_nutrition_{start_label}_to_{end_label}"
 
     if fmt == 'word' or fmt == 'doc':
-        # Генерируем HTML-таблицу и отдаем как .doc (Word откроет HTML)
-        rows_html = []
-        rows_html.append(f"<h2>Отчёт питания за год — {child.login}</h2>")
-        rows_html.append(f"<p>Период: {start_label} — {end_label}</p>")
-        rows_html.append('<table border="1" cellpadding="4" cellspacing="0">')
-        rows_html.append('<tr><th>Дата</th><th>Время</th><th>Блюдо</th><th>Ккал</th><th>Белки</th><th>Жиры</th><th>Углеводы</th></tr>')
+        # Генерируем HTML-отчёт (вернём как .doc — Word откроет HTML).
+        # Отчёт разбит по дням; для каждой даты перечисляем блюда и суммируем КБЖУ.
+        # Ячейки итогов за день подсвечиваем: красным если > цели, синим если < цели, зелёным в остальных случаях.
+        from collections import defaultdict
+
+        daily = defaultdict(list)
         for l in logs:
-            rows_html.append(f"<tr><td>{l.created_at.date().isoformat()}</td><td>{l.created_at.time().strftime('%H:%M:%S')}</td><td>{l.name}</td><td>{l.calories}</td><td>{l.protein}</td><td>{l.fat}</td><td>{l.carbs}</td></tr>")
-        rows_html.append(f"<tr><td colspan=3><strong>Итого</strong></td><td><strong>{round(total_cal,1)}</strong></td><td><strong>{round(total_prot,1)}</strong></td><td><strong>{round(total_fat,1)}</strong></td><td><strong>{round(total_carbs,1)}</strong></td></tr>")
-        rows_html.append('</table>')
-        html = '<html><head><meta charset="utf-8"></head><body>' + ''.join(rows_html) + '</body></html>'
-        resp = make_response(html)
-        resp.headers['Content-Type'] = 'application/msword; charset=utf-8'
-        resp.headers['Content-Disposition'] = f'attachment; filename="{base_name}.doc"'
-        return resp
+            try:
+                d = l.created_at.date().isoformat()
+            except Exception:
+                # fallback если created_at не валиден
+                d = str(getattr(l, 'created_at', ''))
+            daily[d].append(l)
+
+        html_parts = []
+        html_parts.append(f"<h2>Отчёт питания за год — {child.login}</h2>")
+        html_parts.append(f"<p>Период: {start_label} — {end_label}</p>")
+
+        # Стиль таблицы
+        html_parts.append('<style>table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ccc;padding:6px;text-align:left;}th{background:#f5f5f5;}</style>')
+
+        # Проходим по датам в порядке возрастания
+        for date_key in sorted(daily.keys()):
+            day_logs = daily[date_key]
+            html_parts.append(f"<h3>{date_key}</h3>")
+            html_parts.append('<table>')
+            html_parts.append('<tr><th>Время</th><th>Блюдо</th><th>Калории</th><th>Белки</th><th>Жиры</th><th>Углеводы</th></tr>')
+
+            day_total = {'calories': 0.0, 'protein': 0.0, 'fat': 0.0, 'carbs': 0.0}
+            for l in sorted(day_logs, key=lambda x: getattr(x, 'created_at', '')):
+                time_str = ''
+                try:
+                    time_str = l.created_at.time().strftime('%H:%M')
+                except Exception:
+                    time_str = ''
+                cal = float(l.calories or 0)
+                prot = float(l.protein or 0)
+                fat = float(l.fat or 0)
+                carbs = float(l.carbs or 0)
+                day_total['calories'] += cal
+                day_total['protein'] += prot
+                day_total['fat'] += fat
+                day_total['carbs'] += carbs
+                html_parts.append(f"<tr><td>{time_str}</td><td>{l.name}</td><td>{round(cal,1)}</td><td>{round(prot,1)}</td><td>{round(fat,1)}</td><td>{round(carbs,1)}</td></tr>")
+
+            # Сравниваем итоги с целями и подготавливаем стили
+            def cell_style(value, target):
+                try:
+                    v = float(value)
+                    t = float(target)
+                except Exception:
+                    return ''
+                if v > t:
+                    return 'background-color:#ffecec;'
+                if v < t:
+                    return 'background-color:#ecf5ff;'
+                return 'background-color:#ecffec;'
+
+            html_parts.append('<tr>')
+            html_parts.append('<td colspan="2"><strong>Итого за день:</strong></td>')
+            html_parts.append(f"<td style=\"{cell_style(day_total['calories'], targets['calories'])}\"><strong>{round(day_total['calories'],1)}</strong></td>")
+            html_parts.append(f"<td style=\"{cell_style(day_total['protein'], targets['protein'])}\"><strong>{round(day_total['protein'],1)}</strong></td>")
+            html_parts.append(f"<td style=\"{cell_style(day_total['fat'], targets['fat'])}\"><strong>{round(day_total['fat'],1)}</strong></td>")
+            html_parts.append(f"<td style=\"{cell_style(day_total['carbs'], targets['carbs'])}\"><strong>{round(day_total['carbs'],1)}</strong></td>")
+            html_parts.append('</tr>')
+
+            # Отдельная строка: отклонение (пишем + при превышении, - при нехватке, 0 при норме)
+            def dev_cell_html(value, target):
+                try:
+                    v = float(value)
+                    t = float(target)
+                except Exception:
+                    return '<td>0</td>'
+                d = round(v - t, 1)
+                if d > 0:
+                    return f'<td><span style="color:#c00">+{d}</span></td>'
+                if d < 0:
+                    return f'<td><span style="color:#06c">-{abs(d)}</span></td>'
+                return '<td>0</td>'
+
+            html_parts.append('<tr>')
+            html_parts.append('<td colspan="2"><strong>Отклонение</strong></td>')
+            html_parts.append(dev_cell_html(day_total['calories'], targets['calories']))
+            html_parts.append(dev_cell_html(day_total['protein'], targets['protein']))
+            html_parts.append(dev_cell_html(day_total['fat'], targets['fat']))
+            html_parts.append(dev_cell_html(day_total['carbs'], targets['carbs']))
+            html_parts.append('</tr>')
+
+            # Показать нормы под таблицей
+            html_parts.append('<tr>')
+            html_parts.append('<td colspan="2">Норма:</td>')
+            html_parts.append(f"<td>{round(targets['calories'],1)}</td>")
+            html_parts.append(f"<td>{round(targets['protein'],1)}</td>")
+            html_parts.append(f"<td>{round(targets['fat'],1)}</td>")
+            html_parts.append(f"<td>{round(targets['carbs'],1)}</td>")
+            html_parts.append('</tr>')
+
+            html_parts.append('</table><br/>')
+
+    html = '<html><head><meta charset="utf-8"></head><body>' + ''.join(html_parts) + '</body></html>'
+    data = html.encode('utf-8')
+    # Use send_file with a BytesIO to improve reverse-proxy / mobile compatibility
+    bio_doc = io.BytesIO(data)
+    bio_doc.seek(0)
+    # Diagnostic log for mobile download issues
+    try:
+        app.logger.info(
+            f"EXPORT DOC: user_id={session.get('user_id')} role={session.get('role')} remote={request.remote_addr} "
+            f"UA={request.headers.get('User-Agent')[:200]} content_type=application/msword content_length={len(data)}")
+    except Exception:
+        app.logger.exception('Failed to log export doc info')
+    # Write brief debug file with first bytes (hex) so we can inspect without system logs
+    try:
+        Path('logs').mkdir(parents=True, exist_ok=True)
+        preview = binascii.hexlify(data[:200]).decode('ascii')
+        with open(Path('logs') / 'export_debug.txt', 'a', encoding='utf-8') as df:
+            df.write(f"{datetime.utcnow().isoformat()} EXPORT DOC student_id={student_id} user_id={session.get('user_id')} role={session.get('role')} remote={request.remote_addr} fmt=doc size={len(data)}\n")
+            df.write(preview + "\n\n")
+    except Exception:
+        app.logger.exception('Failed to write export debug file for DOC')
+    return send_file(bio_doc, mimetype='application/msword', as_attachment=True, download_name=f"{base_name}.doc")
+
+    # Excel (.xlsx) export with styling
+    if fmt in ('excel', 'xlsx'):
+        try:
+            # Lazy-import openpyxl so it's optional for users who don't need Excel export
+            from openpyxl import Workbook
+            from openpyxl.styles import PatternFill, Font, Alignment
+        except Exception:
+            flash('Для экспорта в Excel требуется библиотека openpyxl. Установите её: pip install openpyxl', 'error')
+            return redirect(url_for('parent_children'))
+
+        from collections import defaultdict
+
+        daily = defaultdict(list)
+        for l in logs:
+            try:
+                d = l.created_at.date().isoformat()
+            except Exception:
+                d = str(getattr(l, 'created_at', ''))
+            daily[d].append(l)
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Nutrition'
+
+        row = 1
+        ws.cell(row=row, column=1, value=f"Отчёт питания за год — {child.login}")
+        row += 2
+        ws.cell(row=row, column=1, value=f"Период: {start_label} — {end_label}")
+        row += 2
+
+        red_fill = PatternFill(start_color='FFFFECEC', fill_type='solid')
+        blue_fill = PatternFill(start_color='FFECF5FF', fill_type='solid')
+        green_fill = PatternFill(start_color='FFECFFEC', fill_type='solid')
+        bold = Font(bold=True)
+
+        # Columns header template
+        for date_key in sorted(daily.keys()):
+            day_logs = daily[date_key]
+
+            ws.cell(row=row, column=1, value=date_key)
+            ws.cell(row=row, column=1).font = bold
+            row += 1
+            # table header
+            headers = ['Время', 'Блюдо', 'Калории', 'Белки', 'Жиры', 'Углеводы']
+            for col, h in enumerate(headers, start=1):
+                c = ws.cell(row=row, column=col, value=h)
+                c.font = bold
+            row += 1
+
+            day_total = {'calories': 0.0, 'protein': 0.0, 'fat': 0.0, 'carbs': 0.0}
+            for l in sorted(day_logs, key=lambda x: getattr(x, 'created_at', '')):
+                time_str = ''
+                try:
+                    time_str = l.created_at.time().strftime('%H:%M')
+                except Exception:
+                    time_str = ''
+                cal = float(l.calories or 0)
+                prot = float(l.protein or 0)
+                fat = float(l.fat or 0)
+                carbs = float(l.carbs or 0)
+
+                ws.cell(row=row, column=1, value=time_str)
+                ws.cell(row=row, column=2, value=l.name)
+                ws.cell(row=row, column=3, value=round(cal,1))
+                ws.cell(row=row, column=4, value=round(prot,1))
+                ws.cell(row=row, column=5, value=round(fat,1))
+                ws.cell(row=row, column=6, value=round(carbs,1))
+
+                day_total['calories'] += cal
+                day_total['protein'] += prot
+                day_total['fat'] += fat
+                day_total['carbs'] += carbs
+                row += 1
+
+            # Totals row
+            ws.cell(row=row, column=1, value='Итого за день:')
+            ws.cell(row=row, column=1).font = bold
+
+            # write numeric totals into cells
+            ws.cell(row=row, column=3, value=round(day_total['calories'], 1))
+            ws.cell(row=row, column=4, value=round(day_total['protein'], 1))
+            ws.cell(row=row, column=5, value=round(day_total['fat'], 1))
+            ws.cell(row=row, column=6, value=round(day_total['carbs'], 1))
+
+            # Prepare differences
+            diff_cal = round(day_total['calories'] - targets['calories'], 1)
+            diff_prot = round(day_total['protein'] - targets['protein'], 1)
+            diff_fat = round(day_total['fat'] - targets['fat'], 1)
+            diff_carbs = round(day_total['carbs'] - targets['carbs'], 1)
+
+            # Отклонение — отдельная строка: +N (красный) при превышении, -N (синий) при нехватке, 0 при норме
+            row += 1
+            ws.cell(row=row, column=1, value='Отклонение')
+            ws.cell(row=row, column=1).font = bold
+
+            from openpyxl.styles import Font
+            red_font = Font(color='00FF0000', bold=True)
+            blue_font = Font(color='000000FF', bold=True)
+
+            def write_dev(col, diff):
+                if diff > 0:
+                    c = ws.cell(row=row, column=col, value=f'+{diff}')
+                    c.font = red_font
+                elif diff < 0:
+                    c = ws.cell(row=row, column=col, value=f'-{abs(diff)}')
+                    c.font = blue_font
+                else:
+                    ws.cell(row=row, column=col, value='0')
+
+            write_dev(3, diff_cal)
+            write_dev(4, diff_prot)
+            write_dev(5, diff_fat)
+            write_dev(6, diff_carbs)
+
+            row += 1
+            # Norms row
+            ws.cell(row=row, column=1, value='Норма:')
+            ws.cell(row=row, column=3, value=round(targets['calories'],1))
+            ws.cell(row=row, column=4, value=round(targets['protein'],1))
+            ws.cell(row=row, column=5, value=round(targets['fat'],1))
+            ws.cell(row=row, column=6, value=round(targets['carbs'],1))
+            row += 2
+
+        # Auto-adjust column widths (simple heuristic)
+        for col in range(1, 7):
+            max_len = 0
+            for r in range(1, row):
+                v = ws.cell(row=r, column=col).value
+                if v is None:
+                    continue
+                l = len(str(v))
+                if l > max_len:
+                    max_len = l
+            ws.column_dimensions[chr(64+col)].width = min(50, max(10, max_len + 2))
+
+    bio = io.BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    data = bio.getvalue()
+    # Diagnostic log for mobile download issues
+    try:
+        app.logger.info(
+            f"EXPORT XLSX: user_id={session.get('user_id')} role={session.get('role')} remote={request.remote_addr} "
+            f"UA={request.headers.get('User-Agent')[:200]} content_type=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet content_length={len(data)}")
+    except Exception:
+        app.logger.exception('Failed to log export xlsx info')
+    # Write brief debug file with first bytes (hex) so we can inspect without system logs
+    try:
+        Path('logs').mkdir(parents=True, exist_ok=True)
+        preview = binascii.hexlify(data[:200]).decode('ascii')
+        with open(Path('logs') / 'export_debug.txt', 'a', encoding='utf-8') as df:
+            df.write(f"{datetime.utcnow().isoformat()} EXPORT XLSX student_id={student_id} user_id={session.get('user_id')} role={session.get('role')} remote={request.remote_addr} fmt=xlsx size={len(data)}\n")
+            df.write(preview + "\n\n")
+    except Exception:
+        app.logger.exception('Failed to write export debug file for XLSX')
+    fileobj = io.BytesIO(data)
+    fileobj.seek(0)
+    return send_file(fileobj, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name=f"{base_name}.xlsx")
 
     # По умолчанию — CSV для Excel
     si = io.StringIO()
@@ -1453,10 +2217,80 @@ def export_child_year(student_id: int):
         writer.writerow([l.created_at.date().isoformat(), l.created_at.time().strftime('%H:%M:%S'), l.name, l.calories, l.protein, l.fat, l.carbs])
     writer.writerow(['Итого', '', '', round(total_cal,1), round(total_prot,1), round(total_fat,1), round(total_carbs,1)])
     data = bom + si.getvalue()
-    resp = make_response(data)
+    bdata = data.encode('utf-8')
+    resp = make_response(bdata)
     resp.headers['Content-Type'] = 'text/csv; charset=utf-8'
     resp.headers['Content-Disposition'] = f'attachment; filename="{base_name}.csv"'
+    resp.headers['Content-Length'] = str(len(bdata))
+    # Diagnostic log for mobile download issues
+    try:
+        app.logger.info(
+            f"EXPORT CSV: user_id={session.get('user_id')} role={session.get('role')} remote={request.remote_addr} "
+            f"UA={request.headers.get('User-Agent')[:200]} content_type={resp.headers.get('Content-Type')} content_length={resp.headers.get('Content-Length')}")
+    except Exception:
+        app.logger.exception('Failed to log export csv info')
+    # Write brief debug file with first bytes (hex) so we can inspect without system logs
+    try:
+        Path('logs').mkdir(parents=True, exist_ok=True)
+        preview = binascii.hexlify(bdata[:200]).decode('ascii')
+        with open(Path('logs') / 'export_debug.txt', 'a', encoding='utf-8') as df:
+            df.write(f"{datetime.utcnow().isoformat()} EXPORT CSV student_id={student_id} user_id={session.get('user_id')} role={session.get('role')} remote={request.remote_addr} fmt=csv size={len(bdata)}\n")
+            df.write(preview + "\n\n")
+    except Exception:
+        app.logger.exception('Failed to write export debug file for CSV')
     return resp
+
+
+@app.route('/parent/child/<int:student_id>/report')
+@login_required(role='parent')
+def child_report(student_id: int):
+    """Показывает веб-страницу с отчётом по питанию для ребёнка (доступен родителю)."""
+    try:
+        parent_id = get_session_user_id()
+    except ValueError:
+        flash('Ошибка сессии. Пожалуйста, войдите снова.', 'error')
+        return redirect(url_for('login'))
+
+    child = Student.query.get_or_404(student_id)
+    if child.parent_id != parent_id:
+        flash('Доступ запрещён', 'error')
+        return redirect(url_for('parent_children'))
+
+    # Собираем логи за год
+    now = datetime.utcnow()
+    start = now - timedelta(days=365)
+    logs = EatLog.query.filter(
+        EatLog.student_id == child.id,
+        EatLog.created_at >= start,
+        EatLog.created_at <= now
+    ).order_by(EatLog.created_at.asc()).all()
+
+    # targets
+    targets = {
+        'calories': safe_float(child.calories or 2000),
+        'protein': safe_float(child.protein or 75),
+        'fat': safe_float(child.fat or 60),
+        'carbs': safe_float(child.carbs or 250)
+    }
+
+    # Group by date
+    from collections import defaultdict
+    daily = defaultdict(list)
+    for l in logs:
+        try:
+            d = l.created_at.date().isoformat()
+        except Exception:
+            d = str(getattr(l, 'created_at', ''))
+        daily[d].append(l)
+
+    # prepare summary per day
+    day_summaries = {}
+    for date_key, day_logs in daily.items():
+        consumed = get_nutrition_summary(day_logs)
+        remaining = calculate_remaining_nutrients(targets, consumed)
+        day_summaries[date_key] = {'logs': day_logs, 'consumed': consumed, 'remaining': remaining}
+
+    return render_template('nutrition_report.html', child=child, day_summaries=day_summaries, targets=targets, start=start.date(), end=now.date())
 
 
 @app.route('/parent/child/<int:student_id>/photo_analyze', methods=['GET', 'POST'])
@@ -1492,36 +2326,69 @@ def photo_analyze_child(student_id: int):
             except Exception as e:
                 flash(f"Ошибка при сохранении файла: {e}")
                 return redirect(request.url)
-
-            app.logger.info(f'Calling analyze_image_with_gemini for file: {filepath}')
+            app.logger.info(f'Running image analysis for file: {filepath}')
+            nutrition_data = None
+            data_url = None
             try:
-                nutrition_data = analyze_image_with_gemini(filepath)
-            except Exception as e:
-                app.logger.exception(f'Unexpected exception from analyze_image_with_gemini: {e}')
-                nutrition_data = None
+                try:
+                    if _ensure_analyze_image_loaded() and app._analyze_image:
+                        nutrition_data = app._analyze_image(filepath)
+                    else:
+                        app.logger.warning('Image analysis disabled or failed to load; skipping analysis')
+                        nutrition_data = None
+                except Exception as e:
+                    app.logger.exception(f'Unexpected exception from analyze_image_with_gemini: {e}')
+                    nutrition_data = None
+
+                # Read file bytes and build data URL so we can safely remove the file
+                try:
+                    import base64
+                    with open(filepath, 'rb') as f:
+                        b = f.read()
+                    suffix = Path(filepath).suffix.lower().lstrip('.')
+                    mime = 'jpeg' if suffix in ('jpg', 'jpeg') else suffix or 'octet-stream'
+                    b64 = base64.b64encode(b).decode('ascii')
+                    data_url = f'data:image/{mime};base64,{b64}'
+                except Exception:
+                    data_url = None
+
+            finally:
+                # Try to delete the uploaded file in all cases to avoid accumulation
+                try:
+                    p = Path(filepath)
+                    if p.exists():
+                        p.unlink()
+                        app.logger.info(f'Removed uploaded file: {filepath}')
+                except Exception:
+                    app.logger.exception(f'Failed to remove uploaded file: {filepath}')
 
             if nutrition_data:
                 app.logger.info(f'Image analysis succeeded for file: {filepath} -> {nutrition_data.get("name") if isinstance(nutrition_data, dict) else "<non-dict>"}')
-                return render_template('photo_analyze.html', filename=fname, data=nutrition_data, target_student_id=student_id)
+                return render_template('photo_analyze.html', filename=None, data=nutrition_data, data_url=data_url, target_student_id=student_id, is_authorized=True)
             else:
                 try:
-                    size = Path(filepath).stat().st_size
+                    size = 'unknown'
                 except Exception:
                     size = 'unknown'
                 app.logger.warning(f'Image analysis failed for file: {filepath} (size={size})')
                 flash('Не удалось проанализировать изображение. Возможно, файл поврежден или API временно недоступен.')
-                return render_template('photo_analyze.html', filename=fname, data=None, target_student_id=student_id)
+                return render_template('photo_analyze.html', filename=None, data=None, data_url=data_url, target_student_id=student_id, is_authorized=True)
         else:
             flash('Недопустимый тип файла. Разрешены: png, jpg, jpeg, gif, webp.')
             return redirect(request.url)
 
-    return render_template('photo_analyze.html', filename=None, data=None, target_student_id=student_id)
+    return render_template('photo_analyze.html', filename=None, data=None, target_student_id=student_id, is_authorized=True)
 
 from forms import FoodForm
 
 @app.route('/add_food', methods=['GET', 'POST'])
-@login_required(role='student')
+@login_required()
 def add_food():
+    # Только ученики и учителя могут добавлять еду
+    if session.get('role') not in ('student', 'teacher'):
+        flash('Доступ запрещён', 'error')
+        return redirect(url_for('login'))
+        
     form = FoodForm()
     
     if request.method == 'POST':
@@ -1584,8 +2451,11 @@ def calorie_calculator():
 
 # ---------------- Анализ фото еды ----------------
 @app.route('/photo_analyze', methods=['GET', 'POST'])
-@login_required(role='student')
 def photo_analyze():
+    """Анализ фото еды доступен всем пользователям"""
+    # Проверяем, авторизован ли пользователь для показа кнопки добавления в дневник
+    is_authorized = 'user_id' in session and session.get('role') in ('student', 'parent')
+    
     if request.method == 'POST':
         if 'file' not in request.files:
             flash('Файл не был отправлен. Пожалуйста, выберите файл.')
@@ -1605,35 +2475,64 @@ def photo_analyze():
             except Exception as e:
                 flash(f"Ошибка при сохранении файла: {e}")
                 return redirect(request.url)
-
             # Используем функцию анализа изображения из анализатора-питания-по-фото
-            app.logger.info(f'Calling analyze_image_with_gemini for file: {filepath}')
+            app.logger.info(f'Running image analysis for file: {filepath}')
+            nutrition_data = None
+            data_url = None
             try:
-                nutrition_data = analyze_image_with_gemini(filepath)
-            except Exception as e:
-                app.logger.exception(f'Unexpected exception from analyze_image_with_gemini: {e}')
-                nutrition_data = None
+                try:
+                    if _ensure_analyze_image_loaded() and app._analyze_image:
+                        nutrition_data = app._analyze_image(filepath)
+                    else:
+                        app.logger.warning('Image analysis disabled or module failed to load; skipping analysis')
+                        nutrition_data = None
+                except Exception as e:
+                    app.logger.exception(f'Unexpected exception from analyze_image_with_gemini: {e}')
+                    nutrition_data = None
+
+                # Read file bytes and build data URL so we can safely remove the file
+                try:
+                    import base64
+                    with open(filepath, 'rb') as f:
+                        b = f.read()
+                    suffix = Path(filepath).suffix.lower().lstrip('.')
+                    mime = 'jpeg' if suffix in ('jpg', 'jpeg') else suffix or 'octet-stream'
+                    b64 = base64.b64encode(b).decode('ascii')
+                    data_url = f'data:image/{mime};base64,{b64}'
+                except Exception:
+                    data_url = None
+
+            finally:
+                # Try to delete the uploaded file in all cases to avoid accumulation
+                try:
+                    p = Path(filepath)
+                    if p.exists():
+                        p.unlink()
+                        app.logger.info(f'Removed uploaded file: {filepath}')
+                except Exception:
+                    app.logger.exception(f'Failed to remove uploaded file: {filepath}')
 
             if nutrition_data:
                 app.logger.info(f'Image analysis succeeded for file: {filepath} -> {nutrition_data.get("name") if isinstance(nutrition_data, dict) else "<non-dict>"}')
-                return render_template('photo_analyze.html', filename=filename, data=nutrition_data)
+                return render_template('photo_analyze.html', filename=None, data=nutrition_data, data_url=data_url, is_authorized=is_authorized)
             else:
                 try:
-                    size = Path(filepath).stat().st_size
+                    size = 'unknown'
                 except Exception:
                     size = 'unknown'
                 app.logger.warning(f'Image analysis failed for file: {filepath} (size={size})')
                 flash('Не удалось проанализировать изображение. Возможно, файл поврежден или API временно недоступен.')
-                return render_template('photo_analyze.html', filename=filename, data=None)
+                return render_template('photo_analyze.html', filename=None, data=None, data_url=data_url, is_authorized=is_authorized)
         else:
             flash('Недопустимый тип файла. Разрешены: png, jpg, jpeg, gif, webp.')
             return redirect(request.url)
 
-    return render_template('photo_analyze.html', filename=None, data=None)
+    return render_template('photo_analyze.html', filename=None, data=None, is_authorized=is_authorized)
 
 @app.route('/add_analyzed_food', methods=['POST'])
+@login_required(role=['student', 'parent'])
 def add_analyzed_food():
-    """Добавляет проанализированную еду в дневник питания"""
+    """Добавляет проанализированную еду в дневник питания (только для авторизованных пользователей)"""
     try:
         # Проверяем базовые права: должен быть либо ученик, либо родитель
         role = session.get('role')
@@ -1744,6 +2643,27 @@ def get_food(food_id):
         'image': food.image
     })
 
+# ---------------- Отчеты по питанию ----------------
+@app.route('/example_nutrition_report')
+@login_required()
+def example_nutrition_report():
+    """Показывает отчет по питанию для конкретного ученика"""
+    if session.get('role') not in ('student', 'parent', 'teacher'):
+        flash('Доступ запрещён', 'error')
+        return redirect(url_for('login'))
+        
+    student_id = request.args.get('student_id')
+    if student_id:
+        # Проверка прав доступа к данным ученика
+        if session.get('role') == 'parent':
+            # Родитель может смотреть только своих детей
+            child = Student.query.get_or_404(student_id)
+            if child.parent_id != session.get('user_id'):
+                flash('Доступ запрещён', 'error')
+                return redirect(url_for('dashboard'))
+    
+    return render_template('example_nutrition_report.html')
+
 # ---------------- API: cities / schools ----------------
 @app.route('/api/cities')
 def api_cities():
@@ -1777,29 +2697,43 @@ def api_grades():
 
 # ---------------- Admin management ----------------
 
-@app.route('/admin/login', methods=['GET', 'POST'])
-def admin_login():
-    """Вход для администратора"""
-    if request.method == 'POST':
-        login = request.form.get('login')
-        password = request.form.get('password')
+@app.route('/admin_autologin')
+def admin_autologin():
+    """Endpoint для автоматического входа администратора."""
+    try:
+        # Проверяем наличие флешки
+        has_flash = check_admin_flash_drive()
+        app.logger.info(f"admin_autologin: checking flash drive: {has_flash}")
         
-        if not login or not password:
-            flash('Необходимо указать логин и пароль', 'error')
-            return redirect(url_for('admin_login'))
-        
-        admin = Admin.query.filter_by(login=login).first()
-        if admin and check_password_hash(admin.password, password):
+        if not has_flash:
+            flash('Для входа администратора необходимо подключить флешку', 'error')
+            return redirect(url_for('login'))
+
+        # Если уже админ — перенаправляем на панель
+        if session.get('role') == 'admin':
+            return redirect(url_for('admin_dashboard'))
+
+        # Пытаемся найти мастер-админа
+        admin = Admin.query.filter_by(is_master=True).first()
+
+        # Если нет мастер-админа, берем первого админа
+        if not admin:
+            admin = Admin.query.first()
+
+        if admin:
             session['user_id'] = admin.id
             session['role'] = 'admin'
             session['is_master_admin'] = admin.is_master
-            session.permanent = True  # Сессия будет жить до выхода
-            flash('Добро пожаловать, администратор!')
+            session.permanent = True
+            app.logger.info(f"Автовход под админом: {admin.login}")
             return redirect(url_for('admin_dashboard'))
         else:
-            flash('Неверный логин или пароль', 'error')
-            
-    return render_template('admin_login.html')
+            flash('Администратор не найден в системе', 'error')
+            return redirect(url_for('index'))
+    except Exception as e:
+        app.logger.exception('Ошибка при автовходе администратора')
+        flash('Произошла ошибка при входе в систему', 'error')
+        return redirect(url_for('index'))
 
 @app.route('/admin')
 @login_required(role='admin')
@@ -2078,10 +3012,9 @@ with app.app_context():
     # Создаём таблицы, если их ещё нет
     db.create_all()
 
-    # Для существующих SQLite-баз: если добавлена колонка barcode в модель, но в таблице её нет,
-    # автоматически добавим столбец (простая ALTER TABLE) чтобы не падало приложение.
+    # Проверяем и добавляем отсутствующие колонки для существующих таблиц
     try:
-        # Получаем список колонок через PRAGMA
+        # Проверяем barcode в таблице eat
         res = db.session.execute(text("PRAGMA table_info('eat')")).all()
         cols = [r[1] for r in res]
         if 'barcode' not in cols:
@@ -2090,11 +3023,21 @@ with app.app_context():
                 db.session.commit()
                 print('Added missing column eat.barcode')
             except Exception as e:
-                # не критично — просто логируем
                 print('Failed to add barcode column:', e)
-    except Exception:
+
+        # Проверяем is_active в таблице pack_items
+        res = db.session.execute(text("PRAGMA table_info('pack_items')")).all()
+        cols = [r[1] for r in res]
+        if 'is_active' not in cols:
+            try:
+                db.session.execute(text("ALTER TABLE pack_items ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1"))
+                db.session.commit()
+                print('Added missing column pack_items.is_active')
+            except Exception as e:
+                print('Failed to add is_active column:', e)
+    except Exception as e:
         # если что-то пошло не так с PRAGMA — не мешаем запуску
-        pass
+        print('Error checking/adding columns:', e)
 
 # Запускаем приложение только при локальной разработке
 if __name__ == "__main__":
@@ -2129,3 +3072,4 @@ if __name__ == "__main__":
     except Exception as e:
         app.logger.exception(f'Failed to start Flask dev server: {e}')
         raise
+ 

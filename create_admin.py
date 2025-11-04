@@ -6,10 +6,14 @@ LOGIN = "-"           # <- замените на желаемый логин
 PASSWORD = "-" # <- замените на желаемый пароль
 
 with app.app_context():
-    if Admin.query.count() > 0:
-        print("Admin already exists; aborting.")
+    existing_admin = Admin.query.filter_by(login=LOGIN).first()
+    
+    if existing_admin:
+        existing_admin.password = generate_password_hash(PASSWORD)
+        db.session.commit()
+        print(f"Updated password for admin: {LOGIN}")
     else:
         admin = Admin(login=LOGIN, password=generate_password_hash(PASSWORD))
         db.session.add(admin)
         db.session.commit()
-        print("Created admin:", LOGIN)
+        print(f"Created new admin: {LOGIN}")

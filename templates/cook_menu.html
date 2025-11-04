@@ -2,17 +2,7 @@
 {% block title %}Управление школьной едой{% endblock %}
 
 {% block body %}
-
-<header class="bg-dark text-white p-3 mb-4 d-flex justify-content-between align-items-center">
-  <h1 class="h4 m-0">Школьное питание</h1>
-  <nav>
-    <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm me-2">Главная</a>
-    <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">Выход</a>
-  </nav>
-</header>
-
 <div class="container my-4">
-
   <button class="btn btn-outline-secondary mb-3" onclick="history.back()">← Назад</button>
 
   <h2 class="mb-3">Управление школьной едой</h2>
@@ -50,29 +40,22 @@
       </select>
     </div>
     <div class="col-md-2">
-      <label class="form-label">День (1-5)</label>
+      <label class="form-label">День</label>
       <select name="day" class="form-select">
         <option value="">—</option>
-        <option value="1">1</option>
-        <option value="2">2</option>
-        <option value="3">3</option>
-        <option value="4">4</option>
-        <option value="5">5</option>
-        <option value="6">6</option>
-        <option value="7">7</option>
+        <option value="1">Понедельник</option>
+        <option value="2">Вторник</option>
+        <option value="3">Среда</option>
+        <option value="4">Четверг</option>
+        <option value="5">Пятница</option>
+        <option value="6">Суббота</option>
+        <option value="7">Воскресенье</option>
       </select>
     </div>
     <div class="col-md-6">
       <label class="form-label">Изображение (файл с телефона) или URL</label>
       <input type="file" name="image_file" accept="image/*" class="form-control mb-2">
       <input type="text" name="image" class="form-control" placeholder="Или вставьте ссылку">
-    </div>
-    <div class="col-md-6">
-      <label class="form-label">Штрихкод (опционально)</label>
-      <input type="text" name="barcode" class="form-control" placeholder="EAN / UPC">
-    </div>
-    <div class="col-12">
-      <button type="button" id="open-barcode-scanner-cook" class="btn btn-outline-secondary">Сканировать штрихкод камерой</button>
     </div>
     <div class="col-12">
       <button type="submit" class="btn btn-success">Добавить</button>
@@ -91,6 +74,8 @@
           <th>Б</th>
           <th>Ж</th>
           <th>У</th>
+          <th>Неделя</th>
+          <th>День</th>
           <th>Изображение</th>
           <th>Действия</th>
         </tr>
@@ -115,9 +100,13 @@
             <td>
               <select name="day" class="form-select form-select-sm">
                 <option value="" {% if not food.day %}selected{% endif %}>—</option>
-                {% for d in range(1,8) %}
-                  <option value="{{ d }}" {% if food.day == d %}selected{% endif %}>{{ d }}</option>
-                {% endfor %}
+                <option value="1" {% if food.day == 1 %}selected{% endif %}>Пн</option>
+                <option value="2" {% if food.day == 2 %}selected{% endif %}>Вт</option>
+                <option value="3" {% if food.day == 3 %}selected{% endif %}>Ср</option>
+                <option value="4" {% if food.day == 4 %}selected{% endif %}>Чт</option>
+                <option value="5" {% if food.day == 5 %}selected{% endif %}>Пт</option>
+                <option value="6" {% if food.day == 6 %}selected{% endif %}>Сб</option>
+                <option value="7" {% if food.day == 7 %}selected{% endif %}>Вс</option>
               </select>
             </td>
             <td>
@@ -128,14 +117,6 @@
                   <img src="{{ url_for('static', filename='uploads/' ~ food.image) }}" width="50" class="img-thumbnail">
                 {% endif %}
               {% endif %}
-              <div class="mt-1">
-                <label class="form-label form-label-sm">Штрихкод</label>
-                <div class="input-group">
-                  <input type="text" name="barcode" class="form-control form-control-sm barcode-field" value="{{ food.barcode or '' }}">
-                  <button type="button" class="btn btn-outline-secondary btn-sm scan-row-barcode">📷</button>
-                </div>
-
-              </div>
               <input type="file" name="image_file" accept="image/*" class="form-control form-control-sm mt-1">
             </td>
             <td class="d-flex gap-2">
@@ -148,6 +129,68 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
+
+  <hr>
+
+  <h3>Автоматически созданные паки</h3>
+  <div class="mb-3">
+    <div class="list-group">
+      {% for pack in packs %}
+        <div class="list-group-item">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div>
+              <strong>{{ pack.name }}</strong>
+            </div>
+            <div class="btn-group">
+              <button type="button" class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#qrModal" data-food-id="{{ pack.id }}" data-food-name="{{ pack.name }}" data-food-type="pack">QR</button>
+            </div>
+          </div>
+          
+          <div class="table-responsive">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th>Продукт</th>
+                  <th>Калории</th>
+                  <th>Б/Ж/У</th>
+                  <th>Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in pack.items %}
+                <tr {% if not item.is_active %}class="table-secondary"{% endif %}>
+                  <td>{{ item.food.name }}</td>
+                  <td>{{ item.food.calories }}</td>
+                  <td>{{ item.food.protein }}/{{ item.food.fat }}/{{ item.food.carbs }}</td>
+                  <td>
+                    <form method="POST" class="d-inline">
+                      <input type="hidden" name="action" value="toggle_pack_item">
+                      <input type="hidden" name="item_id" value="{{ item.id }}">
+                      <button type="submit" class="btn btn-outline-{% if item.is_active %}warning{% else %}success{% endif %} btn-sm">
+                        {% if item.is_active %}Отключить{% else %}Включить{% endif %}
+                      </button>
+                    </form>
+                    <form method="POST" class="d-inline" onsubmit="return confirm('Удалить продукт из пака?');">
+                      <input type="hidden" name="action" value="remove_pack_item">
+                      <input type="hidden" name="item_id" value="{{ item.id }}">
+                      <button type="submit" class="btn btn-outline-danger btn-sm">Удалить</button>
+                    </form>
+                  </td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="4">Нет продуктов в паке</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      {% else %}
+        <div class="list-group-item">Нет созданных паков</div>
+      {% endfor %}
+    </div>
   </div>
 
 </div>
@@ -232,8 +275,13 @@
 
     function buildQr() {
       var grams = gramsInput.value
-      var url = window.location.origin + '/scan?food_id=' + encodeURIComponent(foodId)
-      if (foodType !== 'school' && grams) url += '&grams=' + encodeURIComponent(grams)
+      var url = ''
+      if (foodType === 'pack') {
+        url = window.location.origin + '/pack_scan?pack_id=' + encodeURIComponent(foodId)
+      } else {
+        url = window.location.origin + '/scan?food_id=' + encodeURIComponent(foodId)
+        if (foodType !== 'school' && grams) url += '&grams=' + encodeURIComponent(grams)
+      }
 
       ensureRenderer()
 

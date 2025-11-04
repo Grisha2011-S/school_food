@@ -1,6 +1,7 @@
 {
     "school_cafe": "Мектеп асханасы",
     "about_project": "Жоба туралы",
+    "analyze_food": "Фото талдау",
     "school_cafe_description": "Мектеп асханасы — дәмді, пайдалы және махаббатпен! Мұнда мәзір мен тағамдардың калориясын білуге болады.",
     "contacts": "Байланыс",
     "todays_menu": "Бүгінгі мәзір",
@@ -8,6 +9,10 @@
     "calorie_calculator": "Калория калькуляторы",
     "more_about_us": "Біз туралы толығырақ",
     "no_menu_today": "Бүгін мектеп мәзірі жоқ немесе демалыс күні.",
+    "cycle": {
+        "week": "Апта",
+        "day": "Күн"
+    },
     "grams": "г",
     "scan_barcode": "Штрих-кодты сканерлеу",
     "close": "Жабу",
@@ -26,6 +31,7 @@
         "register": "Тіркелу",
         "dashboard": "Жеке кабинет",
         "logout": "Шығу"
+        
     },
     "auth": {
         "login": "Логин",
@@ -38,7 +44,7 @@
         "who_are_you": "Сіз кімсіз?",
         "parent": "Ата-ана",
         "teacher": "Мұғалім",
-        "cook": "Аспаз",
+        "cook": "Диетолог",
         "student": "Оқушы"
     },
     "school": {
@@ -80,23 +86,45 @@
         "cancel": "Беру"
     },
     "photo": {
-        "food_analyzer": "Анализатор фото",
-        "select_photo": "Выберите фото",
-        "upload_and_analyze": "Загрузить и проанализировать",
-        "uploaded_photo": "Загруженное фото",
-        "analysis_result": "Результат анализа",
-        "uploaded_image": "Загруженное изображение",
-        "analysis_results": "Результаты анализа",
-        "food_name": "Название блюда",
-        "serving_size": "Размер порции",
-        "nutrient": "Питательное вещество",
-        "value": "Значение",
+        "analyze_title": "Тағам фотосын талдау",
+        "food_analyzer": "Фото талдағыш",
+        "analyze_description": "Тағамның құнарлылығын талдау үшін фотосуретті жүктеңіз",
+        "select_image": "Суретті таңдаңыз",
+        "select_photo": "Фотосуретті таңдаңыз",
+        "analyze_button": "Талдау",
+        "upload_and_analyze": "Жүктеу және талдау",
+        "uploaded_photo": "Жүктелген фото",
+        "analysis_result": "Талдау нәтижесі",
+        "uploaded_image": "Жүктелген сурет",
+        "analysis_results": "Талдау нәтижелері",
+        "food_name": "Тағам атауы",
+        "serving_size": "Порция мөлшері",
+        "nutrient": "Қоректік зат",
+        "value": "Мәні",
         "calories": "Калориялар",
         "protein": "Ақуыздар",
         "fat": "Майлар",
         "carbs": "Көмірсулар",
-        "add_to_diary": "Добавить в дневник питания",
-        "analysis_failed": "Не удалось проанализировать изображение"
+        "add_to_diary": "Тамақтану күнделігіне қосу",
+        "add_to_diary_button": "Күнделікке қосу",
+        "analysis_failed": "Суретті талдау мүмкін болмады. Басқа фотосуретті байқап көріңіз."
+    },
+    "cook": {
+        "menu_management": "Мәзірді басқару",
+        "add_dish": "Тағам қосу",
+        "edit_dish": "Тағамды өңдеу",
+        "delete_dish": "Тағамды жою",
+        "dish_name": "Тағам атауы",
+        "portion_size": "Порция мөлшері",
+        "nutrition_info": "Тағамдық құндылығы",
+        "week_number": "Апта нөмірі",
+        "day_number": "Күн нөмірі",
+        "school_menu": "Мектеп мәзірі",
+        "other_dishes": "Басқа тағамдар",
+        "add_to_menu": "Мәзірге қосу",
+        "remove_from_menu": "Мәзірден алып тастау",
+        "save_changes": "Өзгерістерді сақтау",
+        "cancel_changes": "Өзгерістерден бас тарту"
     },
     "messages": {
         "success": "Сәтті",
@@ -104,6 +132,12 @@
         "invalid_login": "Қате логин немесе құпия сөз",
         "reg_success": "Тіркелу сәтті аяқталды!",
         "login_exists": "Бұл логин бос емес",
-        "fill_required": "Міндетті өрістерді толтырыңыз"
+        "fill_required": "Міндетті өрістерді толтырыңыз",
+        "dish_added": "Тағам сәтті қосылды",
+        "dish_updated": "Тағам сәтті жаңартылды",
+        "dish_deleted": "Тағам жойылды",
+        "menu_updated": "Мәзір жаңартылды",
+        "invalid_values": "Қате мәндер енгізілді",
+        "access_denied": "Қол жетімділік рұқсат етілмеген"
     }
 }

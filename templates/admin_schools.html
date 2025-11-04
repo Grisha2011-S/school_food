@@ -3,6 +3,11 @@
 
 {% block body %}
 <div class="container mt-4">
+  <div class="mb-3">
+    <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-secondary">
+      <i class="bi bi-arrow-left"></i> Назад
+    </a>
+  </div>
   <h2>Школы</h2>
   <form method="POST" class="row g-2 mb-3">
     <div class="col-md-5">

@@ -16,10 +16,16 @@
         <p class="mb-1">Остаток калорий: <strong>{{ child_summaries[child.id].remaining_cal }} ккал</strong></p>
         <p class="mb-1 small">Сегодня съедено: <strong>{{ child_summaries[child.id].sum_cal }} ккал</strong></p>
         <p class="mb-2 small">Б: {{ child_summaries[child.id].sum_prot }} г · Ж: {{ child_summaries[child.id].sum_fat }} г · У: {{ child_summaries[child.id].sum_carbs }} г</p>
-        <div class="mt-2">
-          <a class="btn btn-outline-success btn-sm" href="{{ url_for('export_child_year', student_id=child.id, fmt='excel') }}">Экспорт Excel</a>
-          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('export_child_year', student_id=child.id, fmt='word') }}">Экспорт Word</a>
-          <a class="btn btn-primary btn-sm ms-2" href="{{ url_for('photo_analyze_child', student_id=child.id) }}">Анализ фото</a>
+        <div class="mt-2 d-flex gap-2">
+          <a class="btn btn-outline-success btn-sm" href="{{ url_for('export_child_year', student_id=child.id, fmt='doc') }}" target="_blank" rel="noopener noreferrer">
+            <i class="bi bi-file-earmark-word"></i> DOC
+          </a>
+          <a class="btn btn-outline-primary btn-sm" href="{{ url_for('export_child_year', student_id=child.id, fmt='excel') }}" target="_blank" rel="noopener noreferrer">
+            <i class="bi bi-file-earmark-spreadsheet"></i> XLS/CSV
+          </a>
+          <a class="btn btn-primary btn-sm ms-2" href="{{ url_for('photo_analyze_child', student_id=child.id) }}">
+            <i class="bi bi-camera"></i> Анализ фото
+          </a>
         </div>
         <details>
           <summary class="small">Показать список съеденного</summary>

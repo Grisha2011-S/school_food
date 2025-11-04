@@ -1,4 +1,4 @@
-from food_detection_impl import analyze_image_with_gemini
+from food_detection import analyze_image_with_gemini
 import os
 import logging
 from dotenv import load_dotenv

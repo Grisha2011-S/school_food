@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Пример отчёта по питанию</title>
+    <meta charset="utf-8" />
+    <style>
+        table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f5f5f5; }
+        .over { background-color: #ffecec; }  /* красный для переедания */
+        .under { background-color: #ecf5ff; } /* голубой для недоедания */
+        .normal { background-color: #ecffec; } /* зеленый для нормы */
+    </style>
+</head>
+<body>
+    <h1>Отчёт по питанию ученика (пример)</h1>
+    <p>Если вы видите эту страницу — шаблон доступен.</p>
+
+    <h2>Иванов Петр, Класс 5А</h2>
+    
+    <h3>1 ноября 2025</h3>
+    <table>
+        <tr>
+            <th>Время</th>
+            <th>Продукт</th>
+            <th>Калории</th>
+            <th>Белки</th>
+            <th>Жиры</th>
+            <th>Углеводы</th>
+        </tr>
+        <tr>
+            <td>09:15</td>
+            <td>Каша овсяная</td>
+            <td>150</td>
+            <td>5</td>
+            <td>3</td>
+            <td>25</td>
+        </tr>
+        <tr>
+            <td>12:30</td>
+            <td>Суп куриный</td>
+            <td>200</td>
+            <td>12</td>
+            <td>8</td>
+            <td>20</td>
+        </tr>
+        <tr>
+            <td>15:45</td>
+            <td>Яблоко</td>
+            <td>52</td>
+            <td>0.3</td>
+            <td>0.2</td>
+            <td>14</td>
+        </tr>
+        <tr class="normal">
+            <td colspan="2"><strong>Итого за день:</strong></td>
+            <td>402</td>
+            <td>17.3</td>
+            <td>11.2</td>
+            <td>59</td>
+        </tr>
+        <tr>
+            <td colspan="2">Норма:</td>
+            <td>400</td>
+            <td>18</td>
+            <td>12</td>
+            <td>60</td>
+        </tr>
+    </table>
+
+</body>
+</html>
