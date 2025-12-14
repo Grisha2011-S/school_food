@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Главная - School Cafe</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <style>
+        .bd-placeholder-img {
+            font-size: 1.125rem;
+            text-anchor: middle;
+            user-select: none;
+        }
+        @media (min-width: 768px) {
+            .bd-placeholder-img-lg { font-size: 3.5rem; }
+        }
+        .album .card { margin-bottom: 1.5rem; }
+    </style>
+</head>
+<body>
+    <header data-bs-theme="dark">
+        <div class="navbar navbar-dark bg-dark shadow-sm">
+            <div class="container d-flex justify-content-between align-items-center">
+                <a href="index.html" class="navbar-brand d-flex align-items-center">
+                    <strong>School Cafe</strong>
+                </a>
+                <div class="d-flex">
+                    <a href="calorie_calculator.html" class="btn btn-outline-light me-2">Калькулятор калорий</a>
+                    <a href="photo_analyze.html" class="btn btn-outline-light me-2">Анализ еды</a>
+                    <a href="about.html" class="btn btn-outline-light me-2">О нас</a>
+                    <a href="login.html" class="btn btn-outline-light">Войти</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <section class="py-5 text-center container">
+            <div class="row py-lg-5">
+                <div class="col-lg-6 col-md-8 mx-auto">
+                    <h1 class="fw-light">Меню на сегодня</h1>
+                    <p class="text-muted small">Неделя: <strong>1</strong> · День: <strong>1</strong></p>
+                    <p class="lead text-body-secondary">
+                        Свежая и полезная еда для школьников
+                    </p>
+                    <p>
+                        <a href="calorie_calculator.html" class="btn btn-primary my-2">Калькулятор калорий</a>
+                        <a href="photo_analyze.html" class="btn btn-success my-2 ms-2">Анализировать еду</a>
+                        <a href="about.html" class="btn btn-secondary my-2">Узнать больше</a>
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <div class="album py-5 bg-body-tertiary">
+            <div class="container">
+                <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-3">
+                    <!-- Пример меню -->
+                    <div class="col">
+                        <div class="card shadow-sm">
+                            <svg class="bd-placeholder-img card-img-top" width="100%" height="225" xmlns="http://www.w3.org/2000/svg" role="img" preserveAspectRatio="xMidYMid slice">
+                                <title>Thumbnail</title>
+                                <rect width="100%" height="100%" fill="#55595c"></rect>
+                                <text x="50%" y="50%" fill="#eceeef" dy=".3em">Каша овсяная</text>
+                            </svg>
+                            <div class="card-body">
+                                <h5>Каша овсяная</h5>
+                                <p class="card-text small">Калории: 150 · Белки: 5г · Жиры: 3г · Углеводы: 25г</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="card shadow-sm">
+                            <svg class="bd-placeholder-img card-img-top" width="100%" height="225" xmlns="http://www.w3.org/2000/svg" role="img" preserveAspectRatio="xMidYMid slice">
+                                <title>Thumbnail</title>
+                                <rect width="100%" height="100%" fill="#55595c"></rect>
+                                <text x="50%" y="50%" fill="#eceeef" dy=".3em">Салат овощной</text>
+                            </svg>
+                            <div class="card-body">
+                                <h5>Салат овощной</h5>
+                                <p class="card-text small">Калории: 80 · Белки: 2г · Жиры: 1г · Углеводы: 15г</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</body>
+</html>
