@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python files
+*.py
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Project files
+.env*
+.git/
+.gitignore
+README.md
+*.bat
+*.sh
+
+# HTML templates (we use embedded HTML in Apps Script)
+templates/
+
+# Static files
+static/
+uploads/
+
+# Logs
+logs/
+*.log
+
+# Test files
+test_*
+*_test.py
+
+# Config files
+config.py
+requirements.txt
+package.json
+tsconfig.json
+vite.config.ts

@@ -32,15 +32,33 @@ def process_child_form(form, parent_id):
             age = float(form.age.data) if form.age.data is not None else None
             height = float(form.height.data) if form.height.data is not None else None
             weight = float(form.weight.data) if form.weight.data is not None else None
-            activity = float(form.activity.data) if form.activity.data is not None else None
+            raw_activity = form.activity.data if form.activity.data is not None else None
+            # map textual activity keys to numeric coeffs
+            def map_activity(v):
+                if v is None or v == '':
+                    return None
+                try:
+                    return float(v)
+                except Exception:
+                    pass
+                m = str(v).strip().lower()
+                mp = {
+                    'minimal':1.2, 'минимальная':1.2, 'минимум':1.2,
+                    'light':1.375, 'лёгкая':1.375, 'легкая':1.375,
+                    'medium':1.55, 'средняя':1.55,
+                    'high':1.725, 'высокая':1.725,
+                    'very_high':1.9, 'очень_высокая':1.9, 'очень высокая':1.9, 'оченьвысокая':1.9
+                }
+                return mp.get(m)
+
+            activity = map_activity(raw_activity)
             
             # Если все данные есть, рассчитываем КБЖУ
             if all(x is not None for x in [age, height, weight, activity]):
                 try:
                     from nutrition_calc import calculate_nutrition
-                    calories, protein, fat, carbs = calculate_nutrition(
-                        gender, age, height, weight, activity
-                    )
+                    measurements = {'age': age, 'height': height, 'weight': weight, 'activity': activity}
+                    calories, protein, fat, carbs = calculate_nutrition(gender, measurements)
                     
                     # Проверка BMI и рекомендации
                     bmi = weight / ((height/100.0)**2)

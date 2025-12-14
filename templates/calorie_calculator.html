@@ -1,168 +1,196 @@
-{% extends "base.html" %}
-{% block title %}{{ t('calorie_calculator') }}{% endblock %}
-{% block body %}
-<div class="container py-4">
-  <form class="calorie-form bg-light rounded shadow p-4 mx-auto" style="max-width: 500px;" 
-        onsubmit="event.preventDefault(); calculateCalories();">
-    
-  <h2 class="text-center mb-4">{{ t('calorie_calculator') }}</h2>
-
-    <!-- Пол -->
-    <div class="mb-3">
-      <label for="gender" class="form-label">Пол</label>
-      <select id="gender" class="form-select" required>
-        <option value="">Выберите пол</option>
-        <option value="male">Мужской</option>
-        <option value="female">Женский</option>
-      </select>
-    </div>
-
-    <!-- Возраст -->
-    <div class="mb-3">
-      <label for="age" class="form-label">Возраст (лет)</label>
-      <input type="number" id="age" class="form-control" required min="1" max="120">
-    </div>
-
-    <!-- Рост -->
-    <div class="mb-3">
-      <label for="height" class="form-label">Рост (см)</label>
-      <input type="number" id="height" class="form-control" required min="50" max="250">
-    </div>
-
-    <!-- Вес -->
-    <div class="mb-3">
-      <label for="weight" class="form-label">Вес (кг)</label>
-      <input type="number" id="weight" class="form-control" required min="3" max="300">
-    </div>
-
-    <!-- Активность -->
-    <div class="mb-4">
-      <label for="activity" class="form-label">Активность</label>
-      <select id="activity" class="form-select" required>
-        <option value="">Выберите уровень активности</option>
-        <option value="1.2">Минимальная</option>
-        <option value="1.375">Лёгкая</option>
-        <option value="1.55">Средняя</option>
-        <option value="1.725">Высокая</option>
-        <option value="1.9">Очень высокая</option>
-      </select>
-    </div>
-
-    <!-- Кнопки -->
-    <div class="d-flex gap-2 mb-3">
-      <button type="button" class="btn btn-secondary flex-grow-1" onclick="history.back()">{{ t('auth.back') }}</button>
-      <button type="submit" class="btn btn-primary flex-grow-1">{{ t('actions.calculate') }}</button>
-    </div>
-
-    <!-- Результат -->
-    <div id="result" class="mt-4 d-none"></div>
-  </form>
-</div>
-
-<script>
-function calculateCalories() {
-  // Получаем все значения
-  const form = {
-    gender: document.getElementById("gender"),
-    age: document.getElementById("age"),
-    height: document.getElementById("height"),
-    weight: document.getElementById("weight"),
-    activity: document.getElementById("activity"),
-  };
-  
-  const result = document.getElementById("result");
-
-  // Проверяем заполнение всех полей
-  for (const [key, input] of Object.entries(form)) {
-    if (!input.value) {
-      result.innerHTML = `<div class="alert alert-danger">Пожалуйста, заполните поле "${input.labels[0].textContent.trim()}"</div>`;
-      result.classList.remove("d-none");
-      input.focus();
-      return;
-    }
-  }
-
-  // Преобразуем значения
-  const data = {
-    gender: form.gender.value,
-    age: parseFloat(form.age.value),
-    height: parseFloat(form.height.value),
-    weight: parseFloat(form.weight.value),
-    activity: parseFloat(form.activity.value)
-  };
-
-  // Формула Миффлина-Сан Жеора
-  let bmr = 10 * data.weight + 6.25 * data.height - 5 * data.age;
-  bmr += data.gender === 'male' ? 5 : -161;
-  
-  const calories = Math.round(bmr * data.activity);
-  const bmi = data.weight / ((data.height/100) * (data.height/100));
-  
-  // Рассчитываем рекомендации
-  let suggestion = '';
-  let recommendedPct = 0;
-  let dietRecommendation = '';
-  let adjustedCalories = calories;
-
-  if (bmi) {
-    if (bmi < 18.5) {
-      // Недовес: чем меньше BMI, тем больше процент увеличения
-      recommendedPct = Math.min(15, Math.round((18.5 - bmi) * 3));
-      adjustedCalories = Math.round(calories * (1 + recommendedPct/100));
-      suggestion = `Индекс массы тела (${bmi.toFixed(1)}) ниже нормы. Рекомендуется увеличить калорийность на ${recommendedPct}%`;
-      dietRecommendation = 'Рекомендуется добавить в рацион больше белковой пищи (мясо, рыба, яйца, молочные продукты), ' +
-          'сложных углеводов (крупы, хлеб из цельного зерна) и полезных жиров (орехи, авокадо, оливковое масло). ' +
-          'Увеличьте частоту приёмов пищи.';
-    } else if (bmi > 25) {
-      // Перевес: чем больше BMI, тем больше процент уменьшения
-      recommendedPct = Math.max(-15, Math.round((25 - bmi) * 2));
-      adjustedCalories = Math.round(calories * (1 + recommendedPct/100));
-      suggestion = `Индекс массы тела (${bmi.toFixed(1)}) выше нормы. Рекомендуется уменьшить калорийность на ${Math.abs(recommendedPct)}%`;
-      dietRecommendation = 'Рекомендуется уменьшить размер порций, исключить сладкие напитки и фастфуд. ' +
-          'Увеличьте потребление овощей и нежирного белка. ' +
-          'Придерживайтесь регулярного режима питания.';
-    } else {
-      suggestion = `Индекс массы тела (${bmi.toFixed(1)}) в норме`;
-      dietRecommendation = 'Ваш индекс массы тела в норме. ' +
-          'Рекомендуется поддерживать текущий режим питания, обеспечивая разнообразный рацион ' +
-          'со всеми необходимыми питательными веществами.';
-    }
-  }
-
-  // Формируем результат
-  result.innerHTML = `
-    <div class="card border-0 shadow-sm">
-      <div class="card-body">
-        <h5 class="card-title text-center mb-4">Результаты расчета</h5>
-        
-        <div class="d-flex justify-content-between align-items-center mb-3">
-          <span class="h6 mb-0">Текущая норма калорий:</span>
-          <span class="h5 mb-0 text-primary">${calories} ккал/день</span>
-        </div>
-
-        ${recommendedPct !== 0 ? `
-          <div class="alert alert-info">
-            <div class="d-flex justify-content-between align-items-center">
-              <span>Рекомендуемая калорийность:</span>
-              <strong>${adjustedCalories} ккал/день</strong>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Калькулятор калорий</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+<body>
+    <header data-bs-theme="dark">
+        <div class="navbar navbar-dark bg-dark shadow-sm">
+            <div class="container d-flex justify-content-between align-items-center">
+                <a href="?page=index" class="navbar-brand">School Cafe</a>
+                <a href="?page=dashboard" class="btn btn-outline-light">Назад</a>
             </div>
-            <hr class="my-2">
-            <p class="mb-0">${suggestion}</p>
-          </div>
-        ` : `
-          <div class="alert alert-success">
-            <p class="mb-0">${suggestion}</p>
-          </div>
-        `}
-        
-        <div class="mt-3">
-          <h6>Рекомендации по питанию:</h6>
-          <p class="mb-0">${dietRecommendation}</p>
         </div>
-      </div>
-    </div>`;
-  
-  result.classList.remove("d-none");
-}
-</script>
-{% endblock %}
+    </header>
+
+    <main class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card shadow">
+                    <div class="card-body p-4">
+                        <h2 class="text-center mb-4">Калькулятор калорий</h2>
+
+                        <form id="calorie-form" onsubmit="event.preventDefault(); calculateCalories();">
+                            <!-- Пол -->
+                            <div class="mb-3">
+                                <label for="gender" class="form-label">Пол</label>
+                                <select id="gender" class="form-select" required>
+                                    <option value="">Выберите пол</option>
+                                    <option value="male">Мужской</option>
+                                    <option value="female">Женский</option>
+                                </select>
+                            </div>
+
+                            <!-- Возраст -->
+                            <div class="mb-3">
+                                <label for="age" class="form-label">Возраст (лет)</label>
+                                <input type="number" id="age" class="form-control" required min="1" max="120">
+                            </div>
+
+                            <!-- Рост -->
+                            <div class="mb-3">
+                                <label for="height" class="form-label">Рост (см)</label>
+                                <input type="number" id="height" class="form-control" required min="50" max="250">
+                            </div>
+
+                            <!-- Вес -->
+                            <div class="mb-3">
+                                <label for="weight" class="form-label">Вес (кг)</label>
+                                <input type="number" id="weight" class="form-control" required min="3" max="300">
+                            </div>
+
+                            <!-- Активность -->
+                            <div class="mb-4">
+                                <label for="activity" class="form-label">Активность</label>
+                                <select id="activity" class="form-select" required>
+                                    <option value="">Выберите уровень активности</option>
+                                    <option value="minimal">Минимальная</option>
+                                    <option value="light">Лёгкая</option>
+                                    <option value="medium">Средняя</option>
+                                    <option value="high">Высокая</option>
+                                    <option value="very_high">Очень высокая</option>
+                                </select>
+                            </div>
+
+                            <!-- Кнопки -->
+                            <div class="d-flex gap-2 mb-3">
+                                <a href="?page=dashboard" class="btn btn-secondary flex-grow-1">Назад</a>
+                                <button type="submit" class="btn btn-primary flex-grow-1">Рассчитать</button>
+                            </div>
+                        </form>
+
+                        <!-- Результат -->
+                        <div id="result" class="mt-4 d-none"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        function calculateCalories() {
+            // Получаем все значения
+            const form = {
+                gender: document.getElementById("gender"),
+                age: document.getElementById("age"),
+                height: document.getElementById("height"),
+                weight: document.getElementById("weight"),
+                activity: document.getElementById("activity"),
+            };
+
+            const result = document.getElementById("result");
+
+            // Проверяем заполнение всех полей
+            for (const [key, input] of Object.entries(form)) {
+                if (!input.value) {
+                    result.innerHTML = `<div class="alert alert-danger">Пожалуйста, заполните поле "${input.labels[0].textContent.trim()}"</div>`;
+                    result.classList.remove("d-none");
+                    input.focus();
+                    return;
+                }
+            }
+
+            // Преобразуем значения
+            const map = { minimal:1.2, light:1.375, medium:1.55, high:1.725, very_high:1.9 };
+            const rawActivity = form.activity.value;
+            const activityVal = rawActivity === '' ? NaN : (isFinite(parseFloat(rawActivity)) ? parseFloat(rawActivity) : (map[rawActivity] || NaN));
+
+            const data = {
+                gender: form.gender.value,
+                age: parseFloat(form.age.value),
+                height: parseFloat(form.height.value),
+                weight: parseFloat(form.weight.value),
+                activity: activityVal
+            };
+
+            // Формула Миффлина-Сан Жеора
+            let bmr = 10 * data.weight + 6.25 * data.height - 5 * data.age;
+            bmr += data.gender === 'male' ? 5 : -161;
+
+            const calories = Math.round(bmr * data.activity);
+            const bmi = data.weight / ((data.height/100) * (data.height/100));
+
+            // Рассчитываем рекомендации
+            let suggestion = '';
+            let recommendedPct = 0;
+            let dietRecommendation = '';
+            let adjustedCalories = calories;
+
+            if (bmi) {
+                if (bmi < 18.5) {
+                    // Недовес: чем меньше BMI, тем больше процент увеличения
+                    recommendedPct = Math.min(15, Math.round((18.5 - bmi) * 3));
+                    adjustedCalories = Math.round(calories * (1 + recommendedPct/100));
+                    suggestion = `Индекс массы тела (${bmi.toFixed(1)}) ниже нормы. Рекомендуется увеличить калорийность на ${recommendedPct}%`;
+                    dietRecommendation = 'Рекомендуется добавить в рацион больше белковой пищи (мясо, рыба, яйца, молочные продукты), ' +
+                        'сложных углеводов (крупы, хлеб из цельного зерна) и полезных жиров (орехи, авокадо, оливковое масло). ' +
+                        'Увеличьте частоту приёмов пищи.';
+                } else if (bmi > 25) {
+                    // Перевес: чем больше BMI, тем больше процент уменьшения
+                    recommendedPct = Math.max(-15, Math.round((25 - bmi) * 2));
+                    adjustedCalories = Math.round(calories * (1 + recommendedPct/100));
+                    suggestion = `Индекс массы тела (${bmi.toFixed(1)}) выше нормы. Рекомендуется уменьшить калорийность на ${Math.abs(recommendedPct)}%`;
+                    dietRecommendation = 'Рекомендуется уменьшить размер порций, исключить сладкие напитки и фастфуд. ' +
+                        'Увеличьте потребление овощей и нежирного белка. ' +
+                        'Придерживайтесь регулярного режима питания.';
+                } else {
+                    suggestion = `Индекс массы тела (${bmi.toFixed(1)}) в норме`;
+                    dietRecommendation = 'Ваш индекс массы тела в норме. ' +
+                        'Рекомендуется поддерживать текущий режим питания, обеспечивая разнообразный рацион ' +
+                        'со всеми необходимыми питательными веществами.';
+                }
+            }
+
+            // Формируем результат
+            result.innerHTML = `
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title text-center mb-4">Результаты расчета</h5>
+
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <span class="h6 mb-0">Текущая норма калорий:</span>
+                            <span class="h5 mb-0 text-primary">${calories} ккал/день</span>
+                        </div>
+
+                        ${recommendedPct !== 0 ? `
+                            <div class="alert alert-info">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span>Рекомендуемая калорийность:</span>
+                                    <strong>${adjustedCalories} ккал/день</strong>
+                                </div>
+                                <hr class="my-2">
+                                <p class="mb-0">${suggestion}</p>
+                            </div>
+                        ` : `
+                            <div class="alert alert-success">
+                                <p class="mb-0">${suggestion}</p>
+                            </div>
+                        `}
+
+                        <div class="mt-3">
+                            <h6>Рекомендации по питанию:</h6>
+                            <p class="mb-0">${dietRecommendation}</p>
+                        </div>
+                    </div>
+                </div>`;
+
+            result.classList.remove("d-none");
+        }
+    </script>
+</body>
+</html>

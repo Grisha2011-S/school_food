@@ -1,40 +1,27 @@
 import os
 import sys
-from pathlib import Path
 
 # Настройка пути проекта
-project_home = Path(__file__).resolve().parent
-if str(project_home) not in sys.path:
-    sys.path.insert(0, str(project_home))
+project_home = '/home/SchoolFOD/mysite'
+if project_home not in sys.path:
+    sys.path.insert(0, project_home)
 
-# Настройка virtualenv (если используется)
-venv_path = Path('/home/SchoolFOD/.virtualenvs/myenv/bin/activate_this.py')
-if venv_path.exists():
-    with venv_path.open() as f:
-        exec(f.read(), {'__file__': str(venv_path)})
+# Настройка virtualenv
+venv_paths = [
+    '/home/SchoolFOD/.virtualenvs/school_food_env/bin/activate_this.py',
+    '/home/SchoolFOD/.virtualenvs/myenv/bin/activate_this.py'
+]
+for venv_path in venv_paths:
+    if os.path.exists(venv_path):
+        with open(venv_path) as f:
+            exec(f.read(), {'__file__': venv_path})
+        break
 
-# Настройка окружения перед импортом Flask приложения
-os.environ.setdefault('GEMINI_API_KEY', 'AIzaSyALiST2y0go1Aen3_GnJjzjbr6UsBevn3I')
+# Настройка окружения
+os.environ['GEMINI_API_KEY'] = 'AIzaSyAz-m_zcbkYEkzdfBjIMyqGz_Tz7qSBvRc'
 
-# Импорт и настройка логирования
-import logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]',
-    handlers=[
-        logging.StreamHandler(sys.stderr),
-        logging.FileHandler(str(project_home / 'logs' / 'wsgi.log'))
-    ]
-)
-logger = logging.getLogger('wsgi')
-
-try:
-    # Импорт Flask приложения
-    from flask_app import app as application
-    logger.info('WSGI app loaded successfully')
-except Exception as e:
-    logger.error(f'Failed to load WSGI app: {e}')
-    raise
+# Импорт приложения
+from flask_app import app as application
 
 if __name__ == '__main__':
     application.run()

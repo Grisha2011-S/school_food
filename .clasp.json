@@ -1,0 +1,6 @@
+{
+  "scriptId": "",
+  "rootDir": "./",
+  "fileExtension": "gs",
+  "filePushOrder": ["apps_script.gs"]
+}

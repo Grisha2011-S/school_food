@@ -20,8 +20,8 @@ def validate_measurements(measurements: Dict[str, float]) -> Tuple[bool, str]:
         weight = float(measurements['weight'])
         activity = float(measurements['activity'])
 
-        if not (0 <= age <= 18):
-            return False, "Возраст должен быть от 0 до 18 лет"
+        if age < 0:
+            return False, "Возраст должен быть неотрицательным"
             
         if not (50 <= height <= 250):
             return False, "Рост должен быть от 50 до 250 см"

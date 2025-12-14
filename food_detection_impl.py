@@ -62,6 +62,7 @@ def analyze_image_with_gemini(image_path: str) -> Optional[Dict[str, Union[str, 
 
         try:
             genai.configure(api_key=api_key)
+            logger.info('Successfully configured google.generativeai SDK')
         except Exception as e:
             logger.error(f'Failed to configure google.generativeai SDK: {e}. Check SDK installation/version.')
             return None
@@ -70,6 +71,7 @@ def analyze_image_with_gemini(image_path: str) -> Optional[Dict[str, Union[str, 
         try:
             with Image.open(image_path) as img:
                 img_copy = img.copy()
+                logger.info(f'Opened image {image_path}, size={img.size}')
         except Exception as e:
             logger.error(f'Failed to open image {image_path}: {e}')
             return None
@@ -90,12 +92,13 @@ def analyze_image_with_gemini(image_path: str) -> Optional[Dict[str, Union[str, 
 
         prompt = [
             "Определи еду на этом изображении. Оцени размер порции и предоставь примерную оценку пищевой ценности для порции, показанной на фото. Если на изображении нет еды, укажи это в 'foodName' и установи все значения питательных веществ на 0. Ответ должен быть только в формате JSON.",
-            img,
+            img_copy,
         ]
 
         # Call the SDK to generate content. Wrap in try/except because SDK public
         # API may differ between versions; surface clear logs if it's incompatible.
         try:
+            logger.info('Calling genai.GenerativeModel.generate_content...')
             model = genai.GenerativeModel('gemini-2.5-flash')
             response = model.generate_content(
                 prompt,
@@ -104,6 +107,7 @@ def analyze_image_with_gemini(image_path: str) -> Optional[Dict[str, Union[str, 
                     response_schema=nutrition_schema,
                 ),
             )
+            logger.info('Gemini API call succeeded')
         except Exception as e:
             logger.exception(f'Error while calling google.generativeai SDK: {e}')
             return None
@@ -121,6 +125,7 @@ def analyze_image_with_gemini(image_path: str) -> Optional[Dict[str, Union[str, 
             if start != -1 and end != -1 and end > start:
                 to_parse = text[start:end+1]
             parsed = json.loads(to_parse)
+            logger.info(f'Parsed JSON: {parsed}')
         except Exception as e:
             logger.error(f'Failed to parse JSON from Gemini response: {e} -- raw: {text}')
             return None
@@ -133,7 +138,7 @@ def analyze_image_with_gemini(image_path: str) -> Optional[Dict[str, Union[str, 
         fat = _safe_float(parsed.get('fat'))
         carbs = _safe_float(parsed.get('carbohydrates') or parsed.get('carbs'))
 
-        return {
+        result = {
             'name': food_name,
             'serving_size': serving,
             'calories': calories,
@@ -145,6 +150,8 @@ def analyze_image_with_gemini(image_path: str) -> Optional[Dict[str, Union[str, 
             'servingSize': parsed.get('servingSize'),
             'carbohydrates': parsed.get('carbohydrates'),
         }
+        logger.info(f'Returning result: {result}')
+        return result
 
     except Exception as e:
         logger.exception(f'Error in analyze_image_with_gemini: {e}')

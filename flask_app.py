@@ -1,98 +1,79 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, g, send_from_directory, send_file
+import os
+import time
+import logging
+import io
+import binascii
+from pathlib import Path
+from logging.handlers import RotatingFileHandler
+from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import func
+
+# Минимальная инициализация приложения до определения роутов
+app = Flask(__name__, static_folder='static', template_folder='templates')
+# Загружаем конфиг из instance/config.py если есть
+try:
+    app.config.from_pyfile('instance/config.py')
+except Exception:
+    # если файла нет — достаточно конфигурации по умолчанию
+    pass
+app.secret_key = app.config.get('SECRET_KEY', os.environ.get('SECRET_KEY', 'dev-secret'))
+
+# Декоратор проверки авторизации (определён заранее, чтобы использовать в декораторах маршрутов)
+from functools import wraps
+def login_required(role=None):
+    """Декоратор проверки авторизации, размещён рядом с инициализацией app.
+
+    Позволяет использовать @login_required(...) выше по файлу при определении роутов.
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            # если нет user_id в сессии — перенаправляем на общий логин
+            if 'user_id' not in session:
+                flash('Сначала войдите в систему.', 'error')
+                return redirect(url_for('login'))
+
+            if role:
+                if isinstance(role, (list, tuple, set)):
+                    allowed = set(role)
+                else:
+                    allowed = {role}
+                if session.get('role') not in allowed:
+                    flash('Доступ запрещён!', 'error')
+                    return redirect(url_for('login'))
+
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
 from datetime import timedelta, datetime, date
 from flask_caching import Cache
 from models import db, Parents, Student, Cook, Eat, EatLog
 from models import City, School, Grade, Admin, Pack, PackItem
 from admin_utils import verify_admin, create_admin, activate_admin
-from forms import ChildForm, FoodForm
-from nutrition_calc import calculate_nutrition, validate_measurements
-import time
-from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.utils import secure_filename
-import math
-from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
-import logging
-from logging.handlers import RotatingFileHandler
-from pathlib import Path
-import io
-import binascii
-try:
-    # dotenv_values allows reading .env files without touching os.environ
-    from dotenv import dotenv_values
-except Exception:
-    dotenv_values = None
-import io
-import csv
-from flask import make_response
-from roles_map import get_role_display
-import binascii
+from nutrition_calc import validate_measurements, calculate_nutrition
+# Установим безопасные значения конфигурации по умолчанию для локального запуска
+instance_dir = os.path.join(os.path.dirname(__file__), 'instance')
+os.makedirs(instance_dir, exist_ok=True)
 
-# Настройка логирования
-import logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s %(levelname)s: %(message)s',
-    handlers=[logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
+# По умолчанию используем локальную SQLite-базу в каталоге instance
+app.config.setdefault('SQLALCHEMY_DATABASE_URI', 'sqlite:///' + os.path.join(instance_dir, 'school_food.db'))
+app.config.setdefault('SQLALCHEMY_TRACK_MODIFICATIONS', False)
 
-# Инициализация Flask приложения
-app = Flask(__name__)
-logger.info("Starting Flask application...")
+# Включим простой кэш по умолчанию (файловый/простой in-memory) если не настроен
+app.config.setdefault('CACHE_TYPE', 'SimpleCache')
 
-# Lazy holder for optional image analysis function. We'll import on demand to avoid
-# startup failures when Pillow/NumPy or external SDKs are missing.
-app._analyze_image = None
+# Конфигурация куков для совместимости с современными браузерами
+app.config['SESSION_COOKIE_SECURE'] = True  # Отправлять только по HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True  # Недоступно для JavaScript
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # Защита от CSRF
+app.config['PERMANENT_SESSION_LIFETIME'] = 86400 * 7  # 7 дней
 
-def _ensure_analyze_image_loaded():
-    """Try to import analyze_image_with_gemini into app._analyze_image.
-
-    Returns True if loaded, False otherwise.
-    """
-    if getattr(app, '_analyze_image', None):
-        return True
-    try:
-        from food_detection_impl import analyze_image_with_gemini as _func
-        app._analyze_image = _func
-        app.logger.info('Image analysis module loaded')
-        return True
-    except Exception:
-        app.logger.exception('Failed to import analyze_image_with_gemini; image analysis disabled')
-        app._analyze_image = None
-        return False
-
-# Базовая конфигурация
-try:
-    # Try to read config from .env (without using os.environ directly)
-    env = dotenv_values('.env') if dotenv_values is not None else {}
-    app.config['SECRET_KEY'] = (env.get('SECRET_KEY') if env else None) or 'supersecretkey'
-    app.config['SQLALCHEMY_DATABASE_URI'] = (env.get('DATABASE_URL') if env else None) or 'sqlite:///school.db'
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    logger.info("Basic configuration loaded successfully")
-except Exception as e:
-    logger.error(f"Error loading configuration: {str(e)}")
-    raise
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max-limit
-# Use pathlib.Path instead of os.path for path manipulation
-BASE_DIR = Path(__file__).resolve().parent
-APP_UPLOAD_PATH = BASE_DIR / 'static' / 'uploads'
-app.config['UPLOAD_FOLDER'] = str(APP_UPLOAD_PATH)
-app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-app.config['CACHE_TYPE'] = 'simple'
-app.config['CACHE_DEFAULT_TIMEOUT'] = 300
-
-# Создаем папку для загрузок, если её нет
-APP_UPLOAD_PATH.mkdir(parents=True, exist_ok=True)
-
-# Инициализация кэша
-cache = Cache(app)
-
-# --- Удобная настройка GEMINI API KEY ---
-# Если вы не хотите работать с переменными окружения, можно просто
-# записать ключ сюда (временное решение для локальной отладки).
-# ВАЖНО: не оставляйте секретные ключи в коде в продакшене и не коммитьте их в репозиторий.
+# Инициализируем кеш сразу после создания app, чтобы декораторы @cache.* работали
+cache = Cache()
+cache.init_app(app)
 # Пример: GEMINI_API_KEY = "ваш_секретный_ключ"
 GEMINI_API_KEY = "AIzaSyALiST2y0go1Aen3_GnJjzjbr6UsBevn3I"
 # Если вы явно укажете ключ в переменной ниже, он будет экспортирован в окружение
@@ -103,6 +84,31 @@ GEMINI_API_KEY = "AIzaSyALiST2y0go1Aen3_GnJjzjbr6UsBevn3I"
 #         app.logger.info('GEMINI_API_KEY configured from flask_app variable')
 #     except Exception:
 #         app.logger.exception('Failed to set GEMINI_API_KEY in environment')
+
+
+def _ensure_analyze_image_loaded() -> bool:
+    """Ленивая загрузка реализации анализа изображения.
+
+    При первом вызове пытается импортировать `analyze_image_with_gemini`
+    из `food_detection` (который в свою очередь лениво подхватывает
+    реализацию из `food_detection_impl`). Результат записывается в
+    `app._analyze_image`. Возвращает True, если функция доступна.
+    """
+    # Если уже проверяли — вернуть результат
+    if getattr(app, '_analyze_image_checked', False):
+        return bool(getattr(app, '_analyze_image', None))
+
+    try:
+        from food_detection import analyze_image_with_gemini
+        app._analyze_image = analyze_image_with_gemini
+        app._analyze_image_checked = True
+        app.logger.info('Loaded analyze_image_with_gemini')
+        return True
+    except Exception as e:
+        app._analyze_image = None
+        app._analyze_image_checked = True
+        app.logger.warning(f'Image analysis implementation not available: {e}')
+        return False
 
 # Языковые настройки
 import json
@@ -231,6 +237,13 @@ except ImportError:
 # Регистрируем декоратор для всех роутов
 @app.before_request
 def before_request():
+    # Skip heavy checks for static assets and simple GETs that don't need DB
+    try:
+        path = request.path or ''
+    except Exception:
+        path = ''
+    if path.startswith('/static') or path in ('/favicon.ico', '/robots.txt'):
+        return
     # Приоритет: session -> cookie -> по умолчанию 'ru'
     lang = session.get('language')
     if not lang:
@@ -244,28 +257,38 @@ def before_request():
     
     app.logger.info(f"Текущая роль: {session.get('role')}")
             
-    # Проверяем наличие админа в базе при первом запуске
+    # Проверяем наличие админа в базе при первом запуске (обёрнуто в try/except)
     if not hasattr(app, '_admin_checked'):
-        app.logger.info("Проверка наличия админа в базе...")
-        admin = Admin.query.first()
-        if not admin:
-            app.logger.info("Создаем первого админа...")
-            admin_login = "admin"
-            admin_password = "admin123"  # Начальный пароль
+        try:
+            app.logger.info("Проверка наличия админа в базе...")
+            admin = None
             try:
-                admin = Admin(
-                    login=admin_login,
-                    password=generate_password_hash(admin_password),
-                    is_master=True
-                )
-                db.session.add(admin)
-                db.session.commit()
-                app.logger.info(f"Создан первый админ с логином: {admin_login} и паролем: {admin_password}")
-                print(f"\n\nСоздан первый админ:\nЛогин: {admin_login}\nПароль: {admin_password}\n\n")
-            except Exception as e:
-                app.logger.error(f"Ошибка при создании админа: {str(e)}")
-                db.session.rollback()
-        app._admin_checked = True
+                admin = Admin.query.first()
+            except Exception:
+                # Если БД недоступна — не ломаем обработку запроса (особенно для статических файлов)
+                app.logger.warning('Database not available yet while checking admin')
+
+            if not admin:
+                app.logger.info("Создаем первого админа...")
+                admin_login = "admin"
+                admin_password = "admin123"  # Начальный пароль
+                try:
+                    admin = Admin(
+                        login=admin_login,
+                        password=generate_password_hash(admin_password),
+                        is_master=True
+                    )
+                    db.session.add(admin)
+                    db.session.commit()
+                    app.logger.info(f"Создан первый админ с логином: {admin_login} и паролем: {admin_password}")
+                    print(f"\n\nСоздан первый админ:\nЛогин: {admin_login}\nПароль: {admin_password}\n\n")
+                except Exception as e:
+                    app.logger.error(f"Ошибка при создании админа: {str(e)}")
+                    db.session.rollback()
+        except Exception as e:
+            app.logger.exception('Unexpected error in admin check')
+        finally:
+            app._admin_checked = True
         
     current_lang = lang or 'ru'
     g.lang = current_lang
@@ -322,6 +345,24 @@ def utility_processor():
     # expose role display helper to templates
     # get_role_display можно вызывать в шаблонах как {{ get_role_display('cook') }}
     return dict(t=translate, get_role_display=get_role_display)
+
+
+# Утилита: читаемое имя роли для отображения в шаблонах
+def get_role_display(role_key: str) -> str:
+    """Возвращает человеко-читаемое имя роли по ключу.
+
+    Поддерживает ключи: 'student', 'parent', 'cook', 'admin' и любые другие — возвращает исходный ключ.
+    """
+    if not role_key:
+        return ''
+    mapping = {
+        'student': 'Ученик',
+        'parent': 'Родитель',
+        'cook': 'Диетсестра',
+        'admin': 'Администратор',
+        'teacher': 'Учитель'
+    }
+    return mapping.get(str(role_key), str(role_key))
 
 # Роут для изменения языка
 @app.route('/lang/<lang>')
@@ -540,6 +581,31 @@ def get_session_role() -> str:
         raise ValueError("Invalid role in session")
     return role
 
+def activity_to_coef(val: Union[str, float, None]) -> Optional[float]:
+    """Преобразует строковое или числовое значение активности в числовой коэффициент.
+    Принимает либо число в виде строки/float, либо ключи: minimal, light, medium, high, very_high
+    Также поддерживаются русские варианты: "минимальная", "лёгкая", "средняя", "высокая", "очень высокая".
+    Возвращает float или None, если не получилось распарсить.
+    """
+    if val is None or val == '':
+        return None
+    try:
+        return float(val)
+    except Exception:
+        pass
+    try:
+        v = str(val).strip().lower()
+    except Exception:
+        return None
+    mapping = {
+        'minimal': 1.2, 'минимальная': 1.2, 'минимум': 1.2,
+        'light': 1.375, 'лёгкая': 1.375, 'легкая': 1.375,
+        'medium': 1.55, 'средняя': 1.55,
+        'high': 1.725, 'высокая': 1.725,
+        'very_high': 1.9, 'очень_высокая': 1.9, 'очень высокая': 1.9, 'оченьвысокая': 1.9
+    }
+    return mapping.get(v)
+
 def get_nutrition_summary(logs: List[EatLog]) -> Dict[str, float]:
     """Считает суммарные показатели питания из логов"""
     sum_cal = sum(safe_float(log.calories) for log in logs)
@@ -741,55 +807,106 @@ def extract_clean_answer(text: str) -> str:
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
-        role = request.form.get("role")
-        login = request.form.get("login")  # Изменено с logine на login
-        password = request.form.get("password")
-        if not login or not password:  # Изменено с logine на login
-            flash("Пожалуйста, заполните все поля")
-            return redirect("/register")
-            
-        hash_pass = generate_password_hash(password)
-
-        if role == "parent":
-            # Родитель больше не указывает имя/метку ребёнка при регистрации.
-            user = Parents(login=login, password=hash_pass)  # Изменено с logine на login
-        
-        elif role == "cook":
-            city = request.form.get("city")
-            school = request.form.get("school")
-            user = Cook(login=login, password=hash_pass, city=city, school=school)  # Изменено с logine на login
-        
-        elif role == "teacher":
-            # Создаем учителя как студента с особыми правами
-            city = request.form.get("city")
-            school = request.form.get("school")
-            has_class = request.form.get("has_class") == "on"
-            grade = request.form.get("grade") if has_class else None
-            
-            user = Student(
-                login=login,  # Изменено с logine на login
-                password=hash_pass, 
-                role="student", 
-                is_teacher=True,
-                city=city,
-                school=school,
-                grade=grade
-            )
-
-        else:
-            flash("Регистрация учеников через форму запрещена. Родитель должен добавить ребёнка в своём аккаунте.")
-            return redirect("/register")
-
-        # end of role handling
-
         try:
-            db.session.add(user)
-            db.session.commit()
-            flash("Регистрация прошла успешно!")
-            return redirect("/login")
+            role = request.form.get("role")
+            login = request.form.get("login")  # Изменено с logine на login
+            password = request.form.get("password")
+            if not login or not password:  # Изменено с logine на login
+                flash("Пожалуйста, заполните все поля")
+                return redirect("/register")
+
+            hash_pass = generate_password_hash(password)
+
+            if role == "parent":
+                # Родитель больше не указывает имя/метку ребёнка при регистрации.
+                user = Parents(login=login, password=hash_pass)  # Изменено с logine на login
+
+            elif role == "cook":
+                city = request.form.get("city")
+                school = request.form.get("school")
+                user = Cook(login=login, password=hash_pass, city=city, school=school)  # Изменено с logine на login
+
+            elif role == "teacher":
+                # Создаем учителя как студента с особыми правами
+                city = request.form.get("city")
+                school = request.form.get("school")
+
+                # Проверяем, что указаны обязательные поля
+                if not city or not school:
+                    flash("Пожалуйста, укажите город и школу")
+                    return redirect("/register")
+
+                # Попробуем прочитать антропометрические данные для расчёта КБЖУ
+                gender = request.form.get('gender', 'male')
+                measurements = {}
+                for key in ('age', 'height', 'weight', 'activity'):
+                    v = request.form.get(key)
+                    try:
+                        if v in (None, ''):
+                            measurements[key] = None
+                        elif key == 'activity':
+                            measurements[key] = activity_to_coef(v)
+                        else:
+                            measurements[key] = float(v)
+                    except Exception:
+                        measurements[key] = None
+
+                # Получаем значения КБЖУ из формы
+                try:
+                    cal = float(request.form.get('default_calories', 2000))
+                    prot = float(request.form.get('default_protein', 75))
+                    fat = float(request.form.get('default_fat', 60))
+                    carbs = float(request.form.get('default_carbs', 250))
+                except (TypeError, ValueError):
+                    cal = 2000.0
+                    prot = 75.0
+                    fat = 60.0
+                    carbs = 250.0
+
+                # Если все измерения предоставлены — валидируем и считаем
+                if all(measurements.get(k) is not None for k in ('age', 'height', 'weight', 'activity')):
+                    try:
+                        is_valid, err = validate_measurements(measurements)
+                        if is_valid:
+                            cal, prot, fat, carbs = calculate_nutrition(gender, measurements)
+                        else:
+                            flash(f"Ошибка измерений: {err}", 'warning')
+                    except Exception as e:
+                        app.logger.exception(f'Failed to calculate nutrition for teacher registration: {e}')
+
+                # Создаём запись Student и задаём рассчитанные КБЖУ
+                user = Student(
+                    login=login,
+                    password=hash_pass,
+                    calories=cal,
+                    protein=prot,
+                    fat=fat,
+                    carbs=carbs,
+                    role="student",
+                    city=city,
+                    school=school
+                )
+
+            else:
+                flash("Регистрация учеников через форму запрещена. Родитель должен добавить ребёнка в своём аккаунте.")
+                return redirect("/register")
+
+            # end of role handling
+            try:
+                db.session.add(user)
+                db.session.commit()
+                flash("Регистрация прошла успешно!")
+                return redirect("/login")
+            except Exception:
+                db.session.rollback()
+                app.logger.exception('Error committing new user in register')
+                flash("Ошибка: логин уже существует или другая ошибка.")
+                return redirect('/register')
+
         except Exception:
-            db.session.rollback()
-            flash("Ошибка: логин уже существует.")
+            app.logger.exception('Unexpected error in register POST')
+            flash('Ошибка при регистрации (подробнее в логах).')
+            return redirect('/register')
 
     return render_template("register.html")
 
@@ -824,13 +941,8 @@ def login():
             session["fat"] = user.fat
             session["carbs"] = user.carbs
             session["eaten"] = []
-            session["is_teacher"] = user.is_teacher  # Сохраняем флаг учителя
             session.permanent = True
-            
-            if user.is_teacher:
-                flash('Добро пожаловать, учитель!')
-            else:
-                flash('Добро пожаловать, ученик!')
+            flash('Добро пожаловать, ученик!')
             return redirect(url_for('dashboard'))
 
         # Проверяем родителя
@@ -875,17 +987,33 @@ def dashboard():
             session.clear()
             flash('Ошибка: пользователь не найден.')
             return redirect(url_for('login'))
-            
+
+        # Получаем логи за сегодня из БД, чтобы состояние было едино для любых устройств
+        start_of_day = datetime.combine(date.today(), datetime.min.time())
+        today_logs = EatLog.query.filter(
+            db.and_(EatLog.student_id == user.id, EatLog.created_at >= start_of_day)
+        ).order_by(EatLog.created_at.asc()).all()
+
+        sum_cal = sum([safe_float(l.calories) for l in today_logs])
+        sum_prot = sum([safe_float(l.protein) for l in today_logs])
+        sum_fat = sum([safe_float(l.fat) for l in today_logs])
+        sum_carbs = sum([safe_float(l.carbs) for l in today_logs])
+
+        remaining_cal = round(safe_float(user.calories) - sum_cal, 1)
+        remaining_prot = round(safe_float(user.protein) - sum_prot, 1)
+        remaining_fat = round(safe_float(user.fat) - sum_fat, 1)
+        remaining_carbs = round(safe_float(user.carbs) - sum_carbs, 1)
+
         template_data = {
             'role': 'student',
             'login': user.login,
             'name': user.name,
-            'calories': session.get("calories", user.calories),
-            'protein': session.get("protein", user.protein),
-            'fat': session.get("fat", user.fat),
-            'carbs': session.get("carbs", user.carbs),
-            'eaten': session.get("eaten", []),
-            'is_teacher': user.is_teacher
+            'calories': remaining_cal,
+            'protein': remaining_prot,
+            'fat': remaining_fat,
+            'carbs': remaining_carbs,
+            'eaten': today_logs,
+            'view_as_student': True
         }
 
     elif role == 'parent':
@@ -988,7 +1116,7 @@ def update_calories():
 @app.route('/eat', methods=['GET', 'POST'])
 @login_required()
 def eat():
-    # Только ученики и учителя могут использовать выбор еды
+    # Ученики и учителя могут использовать выбор еды
     if session.get('role') not in ('student', 'teacher'):
         flash('Доступ запрещён', 'error')
         return redirect(url_for('login'))
@@ -1054,7 +1182,13 @@ def eat():
                 session["protein"] = round(session.get("protein", 0) - safe_float(food.protein), 1)
                 session["fat"] = round(session.get("fat", 0) - safe_float(food.fat), 1)
                 session["carbs"] = round(session.get("carbs", 0) - safe_float(food.carbs), 1)
-                session["eaten"].append(f"{food.name} (фикс)")
+                session["eaten"].append({
+                    'name': f"{food.name} (фикс)",
+                    'calories': round(safe_float(food.calories), 1),
+                    'protein': round(safe_float(food.protein), 1),
+                    'fat': round(safe_float(food.fat), 1),
+                    'carbs': round(safe_float(food.carbs), 1)
+                })
 
                 # логируем в базу
                 try:
@@ -1083,11 +1217,21 @@ def eat():
                     grams = float(grams or 0)  # масса блюда в граммах
                 except ValueError:
                     grams = 0
-                session["calories"] = round(session.get("calories", 0) - safe_float(food.calories) * grams / 100, 1)
-                session["protein"] = round(session.get("protein", 0) - safe_float(food.protein) * grams / 100, 1)
-                session["fat"] = round(session.get("fat", 0) - safe_float(food.fat) * grams / 100, 1)
-                session["carbs"] = round(session.get("carbs", 0) - safe_float(food.carbs) * grams / 100, 1)
-                session["eaten"].append(f"{food.name} ({grams} г)")
+                calc_cal = round(safe_float(food.calories) * grams / 100, 1)
+                calc_prot = round(safe_float(food.protein) * grams / 100, 1)
+                calc_fat = round(safe_float(food.fat) * grams / 100, 1)
+                calc_carbs = round(safe_float(food.carbs) * grams / 100, 1)
+                session["calories"] = round(session.get("calories", 0) - calc_cal, 1)
+                session["protein"] = round(session.get("protein", 0) - calc_prot, 1)
+                session["fat"] = round(session.get("fat", 0) - calc_fat, 1)
+                session["carbs"] = round(session.get("carbs", 0) - calc_carbs, 1)
+                session["eaten"].append({
+                    'name': f"{food.name} ({grams} г)",
+                    'calories': calc_cal,
+                    'protein': calc_prot,
+                    'fat': calc_fat,
+                    'carbs': calc_carbs
+                })
 
                 # логируем в базу для обычной еды
                 try:
@@ -1115,6 +1259,20 @@ def eat():
 @app.route('/favicon.ico')
 def favicon():
     return send_from_directory('static/img', 'favicon.ico')
+
+# Установка безопасных заголовков для всех ответов
+@app.after_request
+def set_security_headers(response):
+    """Добавляет заголовки безопасности ко всем ответам."""
+    try:
+        if response:
+            response.headers['X-Content-Type-Options'] = 'nosniff'
+            response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+            response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+            response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
+    except Exception as e:
+        app.logger.warning(f'Failed to set security headers: {e}')
+    return response
 
 @app.route('/')
 def index():
@@ -1372,7 +1530,49 @@ def pack_scan():
         items = PackItem.query.filter_by(pack_id=pack.id).order_by(PackItem.ord).all()
         logged_in = 'user_id' in session
         current_role = session.get('role')
-        return render_template('pack_scan.html', pack=pack, items=items, logged_in=logged_in, current_role=current_role)
+        
+        # Получаем информацию о съеденных блюдах для текущего пользователя
+        eaten_today = {}
+        if logged_in and current_role in ['student', 'parent']:
+            try:
+                # Определяем ID студента
+                if current_role == 'student':
+                    student_id = session.get('user_id')
+                elif current_role == 'parent':
+                    student_id = request.args.get('student_id', type=int)
+                    # Проверяем, что родитель имеет доступ к этому ребенку
+                    if student_id:
+                        parent_id = session.get('user_id')
+                        child = Student.query.get(student_id)
+                        if not child or child.parent_id != parent_id:
+                            student_id = None
+                
+                app.logger.info(f"Getting eaten foods for student_id: {student_id}, role: {current_role}")
+                
+                if student_id:
+                    # Получаем логи питания за сегодня
+                    today = datetime.utcnow().date()
+                    today_logs = EatLog.query.filter(
+                        EatLog.student_id == student_id,
+                        func.date(EatLog.created_at) == today
+                    ).all()
+                    
+                    app.logger.info(f"Found {len(today_logs)} logs for today")
+                    
+                    # Считаем количество каждого блюда
+                    for log in today_logs:
+                        if log.food_id not in eaten_today:
+                            eaten_today[log.food_id] = 0
+                        eaten_today[log.food_id] += 1
+            except Exception as e:
+                app.logger.exception('Error getting eaten foods')
+        
+        return render_template('pack_scan.html', 
+                             pack=pack, 
+                             items=items, 
+                             logged_in=logged_in, 
+                             current_role=current_role,
+                             eaten_today=eaten_today)
     except Exception as e:
         app.logger.exception('Error in pack_scan')
         flash('Ошибка при отображении пака', 'error')
@@ -1401,15 +1601,17 @@ def pack_add():
                     flash('Ребёнок не найден или доступ запрещён', 'error')
                     return redirect(url_for('parent_children'))
 
-        def add_log_for_student(sid, food_obj):
+        def add_log_for_student(sid, food_obj, servings=1):
             try:
-                # for school-type foods use fixed portion
-                calories = round(safe_float(food_obj.calories), 1)
-                protein = round(safe_float(food_obj.protein), 1)
-                fat = round(safe_float(food_obj.fat), 1)
-                carbs = round(safe_float(food_obj.carbs), 1)
-                log = EatLog(student_id=sid, food_id=food_obj.id, name=food_obj.name,
-                             calories=calories, protein=protein, fat=fat, carbs=carbs)
+                # Умножаем все значения на количество порций
+                servings = float(servings)
+                calories = round(safe_float(food_obj.calories) * servings, 1)
+                protein = round(safe_float(food_obj.protein) * servings, 1)
+                fat = round(safe_float(food_obj.fat) * servings, 1)
+                carbs = round(safe_float(food_obj.carbs) * servings, 1)
+                log = EatLog(student_id=sid, food_id=food_obj.id, 
+                           name=f"{food_obj.name} x{int(servings) if servings.is_integer() else servings}",
+                           calories=calories, protein=protein, fat=fat, carbs=carbs)
                 db.session.add(log)
                 db.session.commit()
                 return True
@@ -1430,16 +1632,39 @@ def pack_add():
                 flash('Блюдо не найдено', 'error')
                 return redirect(url_for('index'))
 
+            # Получаем количество порций
+            try:
+                servings = float(request.form.get('servings', 1))
+                if servings < 0.1:  # Минимальное допустимое значение
+                    servings = 1
+            except (ValueError, TypeError):
+                servings = 1
+
             if role == 'student' and not target_student_id:
                 sid = get_session_user_id()
-                ok = add_log_for_student(sid, food)
+                ok = add_log_for_student(sid, food, servings)
                 if ok:
-                    session['calories'] = round(session.get('calories', 0) - safe_float(food.calories), 1)
-                    session['protein'] = round(session.get('protein', 0) - safe_float(food.protein), 1)
-                    session['fat'] = round(session.get('fat', 0) - safe_float(food.fat), 1)
-                    session['carbs'] = round(session.get('carbs', 0) - safe_float(food.carbs), 1)
+                    # Обновляем значения в сессии (без знака минус, так как это еда которую съели)
+                    student = Student.query.get(sid)
+                    session['calories'] = round(safe_float(student.calories) - safe_float(food.calories) * servings, 1)
+                    session['protein'] = round(safe_float(student.protein) - safe_float(food.protein) * servings, 1)
+                    session['fat'] = round(safe_float(student.fat) - safe_float(food.fat) * servings, 1)
+                    session['carbs'] = round(safe_float(student.carbs) - safe_float(food.carbs) * servings, 1)
+                    
+                    # Добавляем в список съеденного
+                    eaten = session.get('eaten', [])
+                    food_name = f"{food.name} x{int(servings) if servings.is_integer() else servings}"
+                    eaten.append({
+                        'name': food_name,
+                        'calories': round(safe_float(food.calories) * servings, 1),
+                        'protein': round(safe_float(food.protein) * servings, 1),
+                        'fat': round(safe_float(food.fat) * servings, 1),
+                        'carbs': round(safe_float(food.carbs) * servings, 1)
+                    })
+                    session['eaten'] = eaten
                     session.modified = True
-                    flash(f'Добавлено: {food.name}')
+                    
+                    flash(f'Добавлено: {food_name}')
                 else:
                     flash('Ошибка при добавлении', 'error')
                 return redirect(url_for('dashboard'))
@@ -1472,18 +1697,39 @@ def pack_add():
             else:
                 sid = target_student_id if target_student_id else get_session_user_id()
             added = 0
+            student = Student.query.get(sid) if sid == session.get('user_id') else None
+            eaten = session.get('eaten', []) if sid == session.get('user_id') else []
+            
             for it in items:
                 food = Eat.query.get(it.food_id)
                 if food:
-                    if add_log_for_student(sid, food):
+                    if add_log_for_student(sid, food, 1):  # добавляем по 1 порции
                         added += 1
                         # if current session belongs to that student, update session totals
                         if sid == session.get('user_id'):
-                            session['calories'] = round(session.get('calories', 0) - safe_float(food.calories), 1)
-                            session['protein'] = round(session.get('protein', 0) - safe_float(food.protein), 1)
-                            session['fat'] = round(session.get('fat', 0) - safe_float(food.fat), 1)
-                            session['carbs'] = round(session.get('carbs', 0) - safe_float(food.carbs), 1)
-                            session.modified = True
+                            # Добавляем в список съеденного
+                            eaten.append({
+                                'name': food.name,
+                                'calories': round(safe_float(food.calories), 1),
+                                'protein': round(safe_float(food.protein), 1),
+                                'fat': round(safe_float(food.fat), 1),
+                                'carbs': round(safe_float(food.carbs), 1)
+                            })
+            
+            if sid == session.get('user_id') and student:
+                # Обновляем суммарные значения в сессии
+                total_cal = sum(item['calories'] for item in eaten)
+                total_prot = sum(item['protein'] for item in eaten)
+                total_fat = sum(item['fat'] for item in eaten)
+                total_carbs = sum(item['carbs'] for item in eaten)
+                
+                session['calories'] = round(safe_float(student.calories) - total_cal, 1)
+                session['protein'] = round(safe_float(student.protein) - total_prot, 1)
+                session['fat'] = round(safe_float(student.fat) - total_fat, 1)
+                session['carbs'] = round(safe_float(student.carbs) - total_carbs, 1)
+                session['eaten'] = eaten
+                session.modified = True
+                
             flash(f'Добавлено {added} блюд из пака')
             return redirect(url_for('dashboard') if role == 'student' else url_for('parent_children'))
 
@@ -1638,11 +1884,20 @@ def parent_add_child():
 
             # Подготовка измерений
             try:
+                # Activity can be either numeric or a textual key (e.g. 'medium')
+                raw_activity = form.activity.data if hasattr(form, 'activity') else None
+                act_val = None
+                if raw_activity not in (None, ''):
+                    try:
+                        act_val = float(raw_activity)
+                    except Exception:
+                        act_val = activity_to_coef(raw_activity)
+
                 measurements = {
                     'age': float(form.age.data) if form.age.data is not None else None,
                     'height': float(form.height.data) if form.height.data is not None else None,
                     'weight': float(form.weight.data) if form.weight.data is not None else None,
-                    'activity': float(form.activity.data) if form.activity.data is not None else None,
+                    'activity': act_val,
                 }
             except (ValueError, TypeError):
                 measurements = {'age': None, 'height': None, 'weight': None, 'activity': None}
@@ -1698,7 +1953,12 @@ def parent_add_child():
                     carbs=carbs,
                     city=city_val,
                     school=school_val,
-                    grade=grade_val
+                    grade=grade_val,
+                    age=measurements.get('age') if isinstance(measurements, dict) else None,
+                    height=measurements.get('height') if isinstance(measurements, dict) else None,
+                    weight=measurements.get('weight') if isinstance(measurements, dict) else None,
+                    activity=measurements.get('activity') if isinstance(measurements, dict) else None,
+                    gender=(form.gender.data if hasattr(form, 'gender') else None)
                 )
                 db.session.add(child)
                 if safe_commit():
@@ -1708,15 +1968,15 @@ def parent_add_child():
                 else:
                     flash('Ошибка при сохранении', 'error')
             except Exception as e:
-                app.logger.error(f'Error adding child: {str(e)}')
-                flash('Ошибка: логин ребёнка уже существует.', 'error')
+                app.logger.exception('Error adding child')
+                flash('Ошибка при добавлении ребёнка (подробнее в логах).', 'error')
 
         except ValueError:
             flash('Ошибка сессии. Пожалуйста, войдите снова.', 'error')
             return redirect(url_for('login'))  # login для родителя
-        except Exception as e:
-            app.logger.error(f'Unexpected error in parent_add_child: {e}')
-            flash('Произошла неожиданная ошибка', 'error')
+        except Exception:
+            app.logger.exception('Unexpected error in parent_add_child')
+            flash('Произошла неожиданная ошибка (подробнее в логах)', 'error')
 
     return render_template('parent_add_child.html', form=form, cities=cities, schools=schools, grades=grades)
 
@@ -1724,7 +1984,8 @@ def parent_add_child():
 # Родитель видит список своих детей и их логи
 @app.route('/parent/children')
 @login_required(role='parent')
-@cache.cached(timeout=60)  # кэшируем на 1 минуту
+# Кэшируем по-минуте, но включаем user_id в префикс ключа, чтобы кэш был пер-пользовательским
+@cache.cached(timeout=60, key_prefix=lambda: f"parent_children:{session.get('user_id')}")
 def parent_children():
     """Показывает список детей родителя и их логи питания за сегодня"""
     try:
@@ -1758,29 +2019,34 @@ def parent_children():
             ).all()
             child_logs[child.id] = logs
             
-            # Считаем потребленные питательные вещества
-            consumed = get_nutrition_summary(logs)
-            
-            # Формируем целевые показатели
-            target = {
-                'calories': safe_float(child.calories),
-                'protein': safe_float(child.protein),
-                'fat': safe_float(child.fat),
-                'carbs': safe_float(child.carbs)
-            }
-            
-            # Считаем остатки
-            remaining = calculate_remaining_nutrients(target, consumed)
-            
-            # Сохраняем результаты
+            # Используем тот же алгоритм, что и в dashboard, чтобы копировать вывод БЖУ
+            # (суммы по логам и остатки = цель - сумма). Это гарантирует идентичный формат.
+            sum_cal = sum([safe_float(l.calories) for l in logs])
+            sum_prot = sum([safe_float(l.protein) for l in logs])
+            sum_fat = sum([safe_float(l.fat) for l in logs])
+            sum_carbs = sum([safe_float(l.carbs) for l in logs])
+
+            remaining_cal = round(safe_float(child.calories) - sum_cal, 1)
+            remaining_prot = round(safe_float(child.protein) - sum_prot, 1)
+            remaining_fat = round(safe_float(child.fat) - sum_fat, 1)
+            remaining_carbs = round(safe_float(child.carbs) - sum_carbs, 1)
+
             child_summaries[child.id] = {
-                'consumed': consumed,
-                'remaining': remaining,
-                'target': target
+                'sum_cal': round(sum_cal, 1),
+                'sum_prot': round(sum_prot, 1),
+                'sum_fat': round(sum_fat, 1),
+                'sum_carbs': round(sum_carbs, 1),
+                'remaining_cal': remaining_cal,
+                'remaining_prot': remaining_prot,
+                'remaining_fat': remaining_fat,
+                'remaining_carbs': remaining_carbs
             }
             
-            # Логируем для мониторинга
-            app.logger.info(f'Calculated nutrition for child {child.id}: consumed={consumed}, remaining={remaining}')
+            # Логируем для мониторинга (используем summary, чтобы не ссылаться на несуществующую переменную)
+            try:
+                app.logger.info(f"Calculated nutrition for child {child.id}: summary={child_summaries[child.id]}")
+            except Exception:
+                app.logger.info(f"Calculated nutrition for child {child.id}: sums computed")
             
     except ValueError as e:
         app.logger.error(f'Session error in parent_children: {str(e)}')
@@ -1792,10 +2058,153 @@ def parent_children():
         flash('Произошла ошибка', 'error')
         return redirect(url_for('dashboard'))
         
+    # Diagnostic log: dump summary values so we can debug zero-values issue
+    try:
+        app.logger.info(f"parent_children: child_summaries dump: {child_summaries}")
+    except Exception:
+        app.logger.exception('Failed to log child_summaries in parent_children')
+
     return render_template('parent_children.html',
                          children=children,
                          child_logs=child_logs,
                          child_summaries=child_summaries)
+
+
+@app.route('/parent/recalc_child/<int:student_id>', methods=['GET', 'POST'])
+@login_required(role='parent')
+def parent_recalc_child(student_id: int):
+    """Пересчитать КБЖУ для ребёнка — доступно только родителю, у которого этот ребёнок привязан."""
+    try:
+        parent_id = get_session_user_id()
+    except ValueError:
+        flash('Ошибка сессии. Пожалуйста, войдите снова.', 'error')
+        return redirect(url_for('login'))
+
+    child = Student.query.get_or_404(student_id)
+    if child.parent_id != parent_id:
+        flash('Доступ запрещён', 'error')
+        return redirect(url_for('parent_children'))
+
+    # GET — показываем страницу с калькулятором/формой для ввода измерений
+    if request.method == 'GET':
+        return render_template('parent_recalc.html', child=child)
+
+    # Попробуем получить новые значения из POST (если пользователь ввёл их в модале)
+    form_age = request.form.get('age')
+    form_height = request.form.get('height')
+    form_weight = request.form.get('weight')
+    form_activity = request.form.get('activity')
+    form_gender = request.form.get('gender')
+
+    # Если в форме переданы значения, используем их (и сохраним в модель). Иначе используем сохранённые значения.
+    def parse_float_or_none(val):
+        try:
+            if val is None or val == '':
+                return None
+            return float(val)
+        except Exception:
+            return None
+
+    age_val = parse_float_or_none(form_age) if form_age is not None else (float(child.age) if child.age is not None else None)
+    height_val = parse_float_or_none(form_height) if form_height is not None else (float(child.height) if child.height is not None else None)
+    weight_val = parse_float_or_none(form_weight) if form_weight is not None else (float(child.weight) if child.weight is not None else None)
+
+    # activity может быть числовым или строковым (ключ). Попробуем распарсить
+    activity_val = None
+    if form_activity is not None and form_activity != '':
+        try:
+            activity_val = float(form_activity)
+        except Exception:
+            # map common keys to coef
+            mapping = {'minimal':1.2,'light':1.375,'medium':1.55,'high':1.725,'very_high':1.9}
+            activity_val = mapping.get(form_activity.lower(), None)
+    else:
+        if child.activity is not None:
+            try:
+                activity_val = float(child.activity)
+            except Exception:
+                activity_val = None
+
+    gender_val = form_gender if (form_gender is not None and form_gender != '') else (child.gender or None)
+
+    # Если пользователь ввёл хотя бы одно новое значение — сохраним их для ребёнка
+    if form_age is not None or form_height is not None or form_weight is not None or form_activity is not None or form_gender is not None:
+        if age_val is not None:
+            child.age = age_val
+        if height_val is not None:
+            child.height = height_val
+        if weight_val is not None:
+            child.weight = weight_val
+        if activity_val is not None:
+            child.activity = activity_val
+        if gender_val is not None:
+            child.gender = gender_val
+        try:
+            db.session.add(child)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+    # Если передан override калорий — сохраняем напрямую (и вычисляем макрораспределение)
+    calories_override = request.form.get('calories_override')
+    if calories_override:
+        try:
+            cal_val = float(calories_override)
+            # Простое макро-распределение: 20% белки, 30% жиры, 50% углеводы
+            prot = round((cal_val * 0.2) / 4, 1)
+            fat = round((cal_val * 0.3) / 9, 1)
+            carbs = round((cal_val * 0.5) / 4, 1)
+            child.calories = float(cal_val)
+            child.protein = float(prot)
+            child.fat = float(fat)
+            child.carbs = float(carbs)
+            db.session.add(child)
+            db.session.commit()
+            try:
+                cache.delete_memoized(parent_children)
+            except Exception:
+                app.logger.exception('Failed to delete cache for parent_children')
+            flash('КБЖУ ребёнка сохранены (override).', 'success')
+            return redirect(url_for('parent_children'))
+        except Exception as e:
+            app.logger.exception(f'Failed to save calories_override for child {child.id}: {e}')
+            db.session.rollback()
+            flash('Ошибка при сохранении переопределённых калорий.', 'error')
+            return redirect(url_for('parent_children'))
+
+    # Проверяем, что теперь есть все необходимые значения для расчёта
+    if age_val is None or height_val is None or weight_val is None or activity_val is None:
+        flash('Недостаточно данных для пересчёта КБЖУ. Укажите возраст, рост, вес и активность или используйте принудительное значение калорий.', 'warning')
+        return redirect(url_for('parent_children'))
+
+    measurements = {'age': float(age_val), 'height': float(height_val), 'weight': float(weight_val), 'activity': float(activity_val)}
+    is_valid, err = validate_measurements(measurements)
+    if not is_valid:
+        flash(f'Невозможно пересчитать: {err}', 'error')
+        return redirect(url_for('parent_children'))
+
+    try:
+        # Используем сохранённый пол ребёнка, если он есть
+        gender = (child.gender or 'male')
+        calories, protein, fat, carbs = calculate_nutrition(gender=gender, measurements=measurements)
+        child.calories = float(calories)
+        child.protein = float(protein)
+        child.fat = float(fat)
+        child.carbs = float(carbs)
+        db.session.add(child)
+        db.session.commit()
+        # Убедимся, что кэш страницы списка детей обновится сразу
+        try:
+            cache.delete_memoized(parent_children)
+        except Exception:
+            app.logger.exception('Failed to delete cache for parent_children')
+        flash('КБЖУ ребёнка пересчитаны и сохранены.', 'success')
+    except Exception as e:
+        app.logger.exception(f'Error recalculating nutrition for child {child.id}: {e}')
+        db.session.rollback()
+        flash('Ошибка при пересчёте или сохранении КБЖУ.', 'error')
+
+    return redirect(url_for('parent_children'))
 
 
 from services.google_sheets import create_nutrition_report
@@ -1876,14 +2285,18 @@ def export_child_year(student_id: int):
         flash('Доступ запрещён', 'error')
         return redirect(url_for('parent_children'))
 
-    # Сбор логов за последний год
-    now = datetime.utcnow()
-    start = now - timedelta(days=365)
+    # Получаем все логи, сортируем по дате
     logs = EatLog.query.filter(
-        EatLog.student_id == child.id,
-        EatLog.created_at >= start,
-        EatLog.created_at <= now
+        EatLog.student_id == child.id
     ).order_by(EatLog.created_at.asc()).all()
+    
+    # Находим первую и последнюю дату
+    if logs:
+        start = logs[0].created_at
+        now = logs[-1].created_at
+    else:
+        now = datetime.utcnow()
+        start = now
 
     # Целевые показатели (нормы) — делаем их доступными для всех форматов
     targets = {
@@ -1924,6 +2337,9 @@ def export_child_year(student_id: int):
     start_label = start.date().isoformat()
     end_label = now.date().isoformat()
     base_name = f"{child.login}_nutrition_{start_label}_to_{end_label}"
+
+    # Инициализируем html_parts по умолчанию
+    html_parts = []
 
     if fmt == 'word' or fmt == 'doc':
         # Генерируем HTML-отчёт (вернём как .doc — Word откроет HTML).
@@ -2025,28 +2441,28 @@ def export_child_year(student_id: int):
 
             html_parts.append('</table><br/>')
 
-    html = '<html><head><meta charset="utf-8"></head><body>' + ''.join(html_parts) + '</body></html>'
-    data = html.encode('utf-8')
-    # Use send_file with a BytesIO to improve reverse-proxy / mobile compatibility
-    bio_doc = io.BytesIO(data)
-    bio_doc.seek(0)
-    # Diagnostic log for mobile download issues
-    try:
-        app.logger.info(
-            f"EXPORT DOC: user_id={session.get('user_id')} role={session.get('role')} remote={request.remote_addr} "
-            f"UA={request.headers.get('User-Agent')[:200]} content_type=application/msword content_length={len(data)}")
-    except Exception:
-        app.logger.exception('Failed to log export doc info')
-    # Write brief debug file with first bytes (hex) so we can inspect without system logs
-    try:
-        Path('logs').mkdir(parents=True, exist_ok=True)
-        preview = binascii.hexlify(data[:200]).decode('ascii')
-        with open(Path('logs') / 'export_debug.txt', 'a', encoding='utf-8') as df:
-            df.write(f"{datetime.utcnow().isoformat()} EXPORT DOC student_id={student_id} user_id={session.get('user_id')} role={session.get('role')} remote={request.remote_addr} fmt=doc size={len(data)}\n")
-            df.write(preview + "\n\n")
-    except Exception:
-        app.logger.exception('Failed to write export debug file for DOC')
-    return send_file(bio_doc, mimetype='application/msword', as_attachment=True, download_name=f"{base_name}.doc")
+        html = '<html><head><meta charset="utf-8"></head><body>' + ''.join(html_parts) + '</body></html>'
+        data = html.encode('utf-8')
+        # Use send_file with a BytesIO to improve reverse-proxy / mobile compatibility
+        bio_doc = io.BytesIO(data)
+        bio_doc.seek(0)
+        # Diagnostic log for mobile download issues
+        try:
+            app.logger.info(
+                f"EXPORT DOC: user_id={session.get('user_id')} role={session.get('role')} remote={request.remote_addr} "
+                f"UA={request.headers.get('User-Agent')[:200]} content_type=application/msword content_length={len(data)}")
+        except Exception:
+            app.logger.exception('Failed to log export doc info')
+        # Write brief debug file with first bytes (hex) so we can inspect without system logs
+        try:
+            Path('logs').mkdir(parents=True, exist_ok=True)
+            preview = binascii.hexlify(data[:200]).decode('ascii')
+            with open(Path('logs') / 'export_debug.txt', 'a', encoding='utf-8') as df:
+                df.write(f"{datetime.utcnow().isoformat()} EXPORT DOC student_id={student_id} user_id={session.get('user_id')} role={session.get('role')} remote={request.remote_addr} fmt=doc size={len(data)}\n")
+                df.write(preview + "\n\n")
+        except Exception:
+            app.logger.exception('Failed to write export debug file for DOC')
+        return send_file(bio_doc, mimetype='application/msword', as_attachment=True, download_name=f"{base_name}.doc")
 
     # Excel (.xlsx) export with styling
     if fmt in ('excel', 'xlsx'):
@@ -2363,14 +2779,12 @@ def photo_analyze_child(student_id: int):
                     app.logger.exception(f'Failed to remove uploaded file: {filepath}')
 
             if nutrition_data:
+                # Результат получен (даже если это "No food detected")
                 app.logger.info(f'Image analysis succeeded for file: {filepath} -> {nutrition_data.get("name") if isinstance(nutrition_data, dict) else "<non-dict>"}')
                 return render_template('photo_analyze.html', filename=None, data=nutrition_data, data_url=data_url, target_student_id=student_id, is_authorized=True)
             else:
-                try:
-                    size = 'unknown'
-                except Exception:
-                    size = 'unknown'
-                app.logger.warning(f'Image analysis failed for file: {filepath} (size={size})')
+                # Результат = None, это реальная ошибка (ключ, импорт, сетевая ошибка)
+                app.logger.warning(f'Image analysis returned None for file: {filepath}')
                 flash('Не удалось проанализировать изображение. Возможно, файл поврежден или API временно недоступен.')
                 return render_template('photo_analyze.html', filename=None, data=None, data_url=data_url, target_student_id=student_id, is_authorized=True)
         else:
@@ -2384,8 +2798,8 @@ from forms import FoodForm
 @app.route('/add_food', methods=['GET', 'POST'])
 @login_required()
 def add_food():
-    # Только ученики и учителя могут добавлять еду
-    if session.get('role') not in ('student', 'teacher'):
+    # Только ученики могут добавлять еду
+    if session.get('role') != 'student':
         flash('Доступ запрещён', 'error')
         return redirect(url_for('login'))
         
@@ -2513,14 +2927,12 @@ def photo_analyze():
                     app.logger.exception(f'Failed to remove uploaded file: {filepath}')
 
             if nutrition_data:
+                # Результат получен (даже если это "No food detected")
                 app.logger.info(f'Image analysis succeeded for file: {filepath} -> {nutrition_data.get("name") if isinstance(nutrition_data, dict) else "<non-dict>"}')
                 return render_template('photo_analyze.html', filename=None, data=nutrition_data, data_url=data_url, is_authorized=is_authorized)
             else:
-                try:
-                    size = 'unknown'
-                except Exception:
-                    size = 'unknown'
-                app.logger.warning(f'Image analysis failed for file: {filepath} (size={size})')
+                # Результат = None, это реальная ошибка (ключ, импорт, сетевая ошибка)
+                app.logger.warning(f'Image analysis returned None for file: {filepath}')
                 flash('Не удалось проанализировать изображение. Возможно, файл поврежден или API временно недоступен.')
                 return render_template('photo_analyze.html', filename=None, data=None, data_url=data_url, is_authorized=is_authorized)
         else:
@@ -2648,7 +3060,7 @@ def get_food(food_id):
 @login_required()
 def example_nutrition_report():
     """Показывает отчет по питанию для конкретного ученика"""
-    if session.get('role') not in ('student', 'parent', 'teacher'):
+    if session.get('role') not in ('student', 'parent'):
         flash('Доступ запрещён', 'error')
         return redirect(url_for('login'))
         
@@ -2663,6 +3075,57 @@ def example_nutrition_report():
                 return redirect(url_for('dashboard'))
     
     return render_template('example_nutrition_report.html')
+
+# ---------------- API: cities / schools ----------------
+    try:
+        student = Student.query.get_or_404(student_id)
+        
+        # Собираем логи за год
+        now = datetime.utcnow()
+        start = now - timedelta(days=365)
+        logs = EatLog.query.filter(
+            EatLog.student_id == student.id,
+            EatLog.created_at >= start,
+            EatLog.created_at <= now
+        ).order_by(EatLog.created_at.asc()).all()
+
+        # Целевые показатели
+        targets = {
+            'calories': safe_float(student.calories or 2000),
+            'protein': safe_float(student.protein or 75),
+            'fat': safe_float(student.fat or 60),
+            'carbs': safe_float(student.carbs or 250)
+        }
+
+        # Group by date
+        daily = defaultdict(list)
+        for l in logs:
+            try:
+                d = l.created_at.date().isoformat()
+            except Exception:
+                d = str(getattr(l, 'created_at', ''))
+            daily[d].append(l)
+
+        # prepare summary per day
+        day_summaries = {}
+        for date_key, day_logs in daily.items():
+            consumed = get_nutrition_summary(day_logs)
+            remaining = calculate_remaining_nutrients(targets, consumed)
+            day_summaries[date_key] = {'logs': day_logs, 'consumed': consumed, 'remaining': remaining}
+
+        return render_template('nutrition_report.html', 
+                            child=student,  # используем тот же шаблон что и для родителя
+                            day_summaries=day_summaries,
+                            targets=targets,
+                            start=start.date(),
+                            end=now.date())
+                            
+    except Exception as e:
+        app.logger.error(f'Error in teacher_student_report: {str(e)}')
+        flash('Произошла ошибка при формировании отчета', 'error')
+        return redirect(url_for('teacher_students'))
+
+
 
 # ---------------- API: cities / schools ----------------
 @app.route('/api/cities')
@@ -3035,6 +3498,29 @@ with app.app_context():
                 print('Added missing column pack_items.is_active')
             except Exception as e:
                 print('Failed to add is_active column:', e)
+
+        # Проверяем новые колонки для Student (age, height, weight, activity, gender)
+        res = db.session.execute(text("PRAGMA table_info('student')")).all()
+        cols = [r[1] for r in res]
+        print(f'[DB INIT] student table columns: {cols}')
+        needed_cols = {
+            'age': "REAL",
+            'height': "REAL",
+            'weight': "REAL",
+            'activity': "REAL",
+            'gender': "VARCHAR(10)"
+        }
+        for col_name, col_type in needed_cols.items():
+            if col_name not in cols:
+                try:
+                    print(f'[DB INIT] Adding missing column student.{col_name}...')
+                    db.session.execute(text(f"ALTER TABLE student ADD COLUMN {col_name} {col_type}"))
+                    db.session.commit()
+                    print(f'[DB INIT] Successfully added column student.{col_name}')
+                except Exception as e:
+                    print(f'[DB INIT] Failed to add {col_name} column: {e}')
+            else:
+                print(f'[DB INIT] Column student.{col_name} already exists')
     except Exception as e:
         # если что-то пошло не так с PRAGMA — не мешаем запуску
         print('Error checking/adding columns:', e)

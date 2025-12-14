@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com 'unsafe-inline'; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https://cdn.jsdelivr.net; frame-ancestors 'self';">
+    <link rel="icon" type="image/x-icon" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="https://via.placeholder.com/180x180.png?text=Icon">
+    <link rel="apple-touch-icon" sizes="152x152" href="https://via.placeholder.com/152x152.png?text=Icon">
+    <link rel="apple-touch-icon" sizes="120x120" href="https://via.placeholder.com/120x120.png?text=Icon">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="manifest" href="data:application/manifest+json,{}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+    <style>
+        .bd-placeholder-img {
+            font-size: 1.125rem;
+            text-anchor: middle;
+            user-select: none;
+        }
+        @media (min-width: 768px) {
+            .bd-placeholder-img-lg { font-size: 3.5rem; }
+        }
+        .album .card { margin-bottom: 1.5rem; }
+
+        .language-selector {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 9999;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 5px;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        @media (max-width: 768px) {
+            .language-selector {
+                bottom: 20px;
+                left: 20px;
+            }
+        }
+
+        .nav-btn {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            border-radius: 0.25rem;
+            height: 38px;
+        }
+
+        @media (max-width: 768px) {
+            .language-selector {
+                display: none;
+            }
+            .nav-text {
+                display: none;
+            }
+            .nav-icon {
+                margin: 0 !important;
+            }
+            .mobile-menu {
+                position: fixed;
+                top: 0;
+                right: -280px;
+                height: 100%;
+                width: 280px;
+                background-color: #343a40;
+                transition: right 0.3s ease;
+                z-index: 1050;
+                padding: 1rem;
+            }
+            .mobile-menu.show {
+                right: 0;
+            }
+            .mobile-menu .btn {
+                width: 100%;
+                margin-bottom: 0.5rem;
+                text-align: left;
+            }
+        }
+    </style>
+    <title>School Food App</title>
+</head>
+<body>
+    <header data-bs-theme="dark">
+        <div class="collapse text-bg-dark" id="navbarHeader">
+            <div class="container">
+                <div class="row">
+                    <div class="col-sm-8 col-md-7 py-4">
+                        <h4>О проекте</h4>
+                        <p class="text-body-secondary">
+                            Система школьного питания для отслеживания потребления еды учениками.
+                        </p>
+                    </div>
+                    <div class="col-sm-4 offset-md-1 py-4">
+                        <h4>Контакты</h4>
+                        <ul class="list-unstyled">
+                            <li><a href="#" class="text-white">Follow on X</a></li>
+                            <li><a href="#" class="text-white">Like on Facebook</a></li>
+                            <li><a href="#" class="text-white">Email me</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="navbar navbar-dark bg-dark shadow-sm">
+            <div class="container d-flex justify-content-between align-items-center">
+                <a href="#" onclick="showPage('index')" class="navbar-brand d-flex align-items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="me-2" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                        <circle cx="12" cy="13" r="4"></circle>
+                    </svg>
+                    <strong>School Cafe</strong>
+                </a>
+
+                <div class="d-none d-md-flex">
+                    <button onclick="showPage('index')" class="btn btn-outline-light nav-btn me-2">
+                        <i class="bi bi-house me-1"></i>
+                        <span>Главная</span>
+                    </button>
+                    <div id="nav-auth">
+                        <button onclick="showPage('login')" class="btn btn-outline-light nav-btn me-2">
+                            <i class="bi bi-person me-1"></i>
+                            <span>Войти</span>
+                        </button>
+                        <button onclick="showPage('register')" class="btn btn-warning nav-btn">
+                            <i class="bi bi-person-plus me-1"></i>
+                            <span>Регистрация</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="d-md-none">
+                    <button class="navbar-toggler" type="button" onclick="toggleMobileMenu()">
+                        <i class="bi bi-list"></i>
+                    </button>
+                </div>
+
+                <div class="mobile-menu d-md-none">
+                    <div class="d-flex justify-content-between mb-3">
+                        <h5 class="text-light">Меню</h5>
+                        <button class="btn-close btn-close-white" onclick="toggleMobileMenu()"></button>
+                    </div>
+                    <button onclick="showPage('index')" class="btn btn-outline-light mb-2 w-100 text-start">
+                        <i class="bi bi-house me-2"></i>Главная
+                    </button>
+                    <div id="mobile-nav-auth">
+                        <button onclick="showPage('login')" class="btn btn-outline-light mb-2 w-100 text-start">
+                            <i class="bi bi-person me-2"></i>Войти
+                        </button>
+                        <button onclick="showPage('register')" class="btn btn-warning mb-2 w-100 text-start">
+                            <i class="bi bi-person-plus me-2"></i>Регистрация
+                        </button>
+                    </div>
+
+                    <div class="border-top border-secondary pt-3 mt-3">
+                        <div class="d-flex justify-content-center">
+                            <div class="btn-group">
+                                <button onclick="setLanguage('ru')" class="btn btn-primary w-100">
+                                   <i class="bi bi-globe me-2"></i>Русский
+                                </button>
+                                <button onclick="setLanguage('kk')" class="btn btn-outline-light w-100">
+                                   <i class="bi bi-globe me-2"></i>Қазақша
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+        function toggleMobileMenu() {
+            const menu = document.querySelector('.mobile-menu');
+            menu.classList.toggle('show');
+
+            if (menu.classList.contains('show')) {
+                const backdrop = document.createElement('div');
+                backdrop.className = 'modal-backdrop fade show';
+                backdrop.style.zIndex = '1040';
+                document.body.appendChild(backdrop);
+                backdrop.addEventListener('click', toggleMobileMenu);
+            } else {
+                const backdrop = document.querySelector('.modal-backdrop');
+                if (backdrop) {
+                    backdrop.remove();
+                }
+            }
+        }
+        </script>
+    </header>
+
+    <div class="language-selector d-none d-md-block">
+        <div class="btn-group">
+            <button onclick="setLanguage('ru')" class="btn btn-sm btn-primary">RU</button>
+            <button onclick="setLanguage('kk')" class="btn btn-sm btn-outline-primary">KZ</button>
+        </div>
+    </div>
+
+    <div id="main-content">
+        <!-- Контент страниц будет загружаться сюда -->
+    </div>
+
+    <div class="modal fade" id="barcodeScannerModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Сканировать штрихкод</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="text-center mb-2">
+                        <button type="button" id="start-barcode-camera" class="btn btn-primary">Запустить камеру</button>
+                    </div>
+                    <div id="barcode-scanner" style="width:100%;min-height:300px"></div>
+                    <p class="small mt-2 text-muted">Наведите камеру на штрихкод для сканирования</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+
+    <script>
+    // Глобальные переменные
+    let currentUser = null;
+    let currentLanguage = 'ru';
+
+    // Функции навигации
+    function showPage(page) {
+        const content = document.getElementById('main-content');
+        switch(page) {
+            case 'index':
+                content.innerHTML = getIndexPage();
+                break;
+            case 'login':
+                content.innerHTML = getLoginPage();
+                break;
+            case 'register':
+                content.innerHTML = getRegisterPage();
+                break;
+            case 'dashboard':
+                if (currentUser) {
+                    content.innerHTML = getDashboardPage();
+                } else {
+                    showPage('login');
+                }
+                break;
+            default:
+                content.innerHTML = '<h1>Страница не найдена</h1>';
+        }
+        updateNavigation();
+    }
+
+    function updateNavigation() {
+        const navAuth = document.getElementById('nav-auth');
+        const mobileNavAuth = document.getElementById('mobile-nav-auth');
+
+        if (currentUser) {
+            navAuth.innerHTML = `
+                <button onclick="showPage('dashboard')" class="btn btn-outline-light nav-btn me-2">
+                    <i class="bi bi-person-workspace me-1"></i>
+                    <span>Панель</span>
+                </button>
+                <button onclick="logout()" class="btn btn-danger nav-btn">
+                    <i class="bi bi-box-arrow-right me-1"></i>
+                    <span>Выйти</span>
+                </button>
+            `;
+            mobileNavAuth.innerHTML = `
+                <button onclick="showPage('dashboard')" class="btn btn-outline-light mb-2 w-100 text-start">
+                    <i class="bi bi-person-workspace me-2"></i>Панель
+                </button>
+                <button onclick="logout()" class="btn btn-danger w-100 text-start">
+                    <i class="bi bi-box-arrow-right me-2"></i>Выйти
+                </button>
+            `;
+        } else {
+            navAuth.innerHTML = `
+                <button onclick="showPage('login')" class="btn btn-outline-light nav-btn me-2">
+                    <i class="bi bi-person me-1"></i>
+                    <span>Войти</span>
+                </button>
+                <button onclick="showPage('register')" class="btn btn-warning nav-btn">
+                    <i class="bi bi-person-plus me-1"></i>
+                    <span>Регистрация</span>
+                </button>
+            `;
+            mobileNavAuth.innerHTML = `
+                <button onclick="showPage('login')" class="btn btn-outline-light mb-2 w-100 text-start">
+                    <i class="bi bi-person me-2"></i>Войти
+                </button>
+                <button onclick="showPage('register')" class="btn btn-warning mb-2 w-100 text-start">
+                    <i class="bi bi-person-plus me-2"></i>Регистрация
+                </button>
+            `;
+        }
+    }
+
+    function setLanguage(lang) {
+        currentLanguage = lang;
+        // Здесь можно добавить логику переключения языка
+        console.log('Language set to:', lang);
+    }
+
+    function logout() {
+        currentUser = null;
+        showPage('index');
+    }
+
+    // Функции для получения HTML страниц
+    function getIndexPage() {
+        return `
+            <main>
+                <section class="py-5 text-center container">
+                    <div class="row py-lg-5">
+                        <div class="col-lg-6 col-md-8 mx-auto">
+                            <h1 class="fw-light">Добро пожаловать в School Cafe</h1>
+                            <p class="lead text-muted">Система для отслеживания питания учеников в школе.</p>
+                            <p>
+                                <button onclick="showPage('register')" class="btn btn-primary my-2">Начать</button>
+                                <button onclick="showPage('login')" class="btn btn-secondary my-2">Войти</button>
+                            </p>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        `;
+    }
+
+    function getLoginPage() {
+        return `
+            <main class="form-signin w-100 m-auto" style="max-width: 330px; padding-top: 100px;">
+                <form id="loginForm">
+                    <h1 class="h3 mb-3 fw-normal">Пожалуйста, войдите</h1>
+
+                    <div class="form-floating mb-3">
+                        <input type="text" class="form-control" id="loginUsername" placeholder="Логин" required>
+                        <label for="loginUsername">Логин</label>
+                    </div>
+                    <div class="form-floating mb-3">
+                        <input type="password" class="form-control" id="loginPassword" placeholder="Пароль" required>
+                        <label for="loginPassword">Пароль</label>
+                    </div>
+
+                    <button class="btn btn-primary w-100 py-2" type="submit">Войти</button>
+                </form>
+            </main>
+            <script>
+                document.getElementById('loginForm').addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    const username = document.getElementById('loginUsername').value;
+                    const password = document.getElementById('loginPassword').value;
+                    // Здесь будет вызов Apps Script функции для логина
+                    google.script.run.withSuccessHandler(function(result) {
+                        if (result.success) {
+                            currentUser = result.user;
+                            showPage('dashboard');
+                        } else {
+                            alert('Ошибка входа: ' + result.message);
+                        }
+                    }).handleLogin(username, password);
+                });
+            </script>
+        `;
+    }
+
+    function getRegisterPage() {
+        return `
+            <main class="form-signin w-100 m-auto" style="max-width: 400px; padding-top: 50px;">
+                <form id="registerForm">
+                    <h1 class="h3 mb-3 fw-normal">Регистрация</h1>
+
+                    <div class="form-floating mb-3">
+                        <input type="text" class="form-control" id="regUsername" placeholder="Логин" required>
+                        <label for="regUsername">Логин</label>
+                    </div>
+                    <div class="form-floating mb-3">
+                        <input type="password" class="form-control" id="regPassword" placeholder="Пароль" required>
+                        <label for="regPassword">Пароль</label>
+                    </div>
+                    <div class="form-floating mb-3">
+                        <select class="form-control" id="regRole" required>
+                            <option value="student">Ученик</option>
+                            <option value="parent">Родитель</option>
+                            <option value="cook">Повар</option>
+                        </select>
+                        <label for="regRole">Роль</label>
+                    </div>
+
+                    <button class="btn btn-primary w-100 py-2" type="submit">Зарегистрироваться</button>
+                </form>
+            </main>
+            <script>
+                document.getElementById('registerForm').addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    const username = document.getElementById('regUsername').value;
+                    const password = document.getElementById('regPassword').value;
+                    const role = document.getElementById('regRole').value;
+                    // Здесь будет вызов Apps Script функции для регистрации
+                    google.script.run.withSuccessHandler(function(result) {
+                        if (result.success) {
+                            alert('Регистрация успешна!');
+                            showPage('login');
+                        } else {
+                            alert('Ошибка регистрации: ' + result.message);
+                        }
+                    }).handleRegister({login: username, password: password, role: role});
+                });
+            </script>
+        `;
+    }
+
+    function getDashboardPage() {
+        return `
+            <main class="container py-5">
+                <h1>Панель управления</h1>
+                <p>Добро пожаловать, ${currentUser ? currentUser.name || currentUser.login : 'Пользователь'}!</p>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Анализ еды</h5>
+                                <p class="card-text">Загрузите фото еды для анализа.</p>
+                                <button onclick="showFoodAnalysis()" class="btn btn-primary">Анализировать</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Логи питания</h5>
+                                <p class="card-text">Просмотр истории питания.</p>
+                                <button onclick="showNutritionLogs()" class="btn btn-primary">Просмотреть</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        `;
+    }
+
+    function showFoodAnalysis() {
+        const content = document.getElementById('main-content');
+        content.innerHTML = `
+            <main class="container py-5">
+                <h1>Анализ еды</h1>
+                <div class="mb-3">
+                    <input type="file" class="form-control" id="foodImage" accept="image/*">
+                </div>
+                <button onclick="analyzeFood()" class="btn btn-primary">Анализировать</button>
+                <div id="analysisResult" class="mt-3"></div>
+            </main>
+            <script>
+                function analyzeFood() {
+                    const fileInput = document.getElementById('foodImage');
+                    const file = fileInput.files[0];
+                    if (!file) {
+                        alert('Выберите изображение');
+                        return;
+                    }
+                    
+                    const resultDiv = document.getElementById('analysisResult');
+                    resultDiv.innerHTML = 'Анализ...';
+                    
+                    // Преобразование файла в base64 для передачи
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const base64 = e.target.result.split(',')[1];
+                        google.script.run.withSuccessHandler(function(labels) {
+                            resultDiv.innerHTML = '<h3>Результаты анализа:</h3><ul>' + 
+                                labels.map(label => '<li>' + label.description + ' (' + (label.score * 100).toFixed(2) + '%)</li>').join('') + 
+                                '</ul>';
+                        }).analyzeFoodImage(Utilities.newBlob(Utilities.base64Decode(base64), file.type));
+                    };
+                    reader.readAsDataURL(file);
+                }
+            </script>
+        `;
+    }
+
+    function showNutritionLogs() {
+        // Заглушка для логов
+        alert('Функция логов питания в разработке');
+    }
+
+    // Инициализация
+    document.addEventListener('DOMContentLoaded', function() {
+        showPage('index');
+    });
+    </script>
+
+</body>
+</html>

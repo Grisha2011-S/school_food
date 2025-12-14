@@ -15,16 +15,13 @@ class ChildForm(FlaskForm):
     password = PasswordField('Пароль', validators=[DataRequired()])
     gender = SelectField('Пол', choices=[('male', 'Мужской'), ('female', 'Женский')])
     # Выбор города/школы/класса в виде селекторов
-    city = SelectField('Город', choices=[('', '— выберите город —'), ('Москва', 'Москва'), ('Санкт-Петербург','Санкт-Петербург'), ('Новосибирск','Новосибирск')], validators=[Optional()])
-    school = SelectField('Школа', choices=[('', '— выберите школу —')], validators=[Optional()])
-    grade = SelectField('Класс', choices=[('', '— выберите класс —')] + [(str(i), str(i)) for i in range(1, 12)], validators=[Optional()])
-    age = FloatField('Возраст', validators=[Optional(), NumberRange(min=0, max=18)])
+    # Используем StringField для гибкости и чтобы избежать "Not a valid choice."
+    city = StringField('Город', validators=[Optional()])
+    school = StringField('Школа', validators=[Optional()])
+    grade = StringField('Класс', validators=[Optional()])
+    # Убрана верхняя граница возраста: теперь можно ввести любое неотрицательное значение
+    age = FloatField('Возраст', validators=[Optional(), NumberRange(min=0)])
     height = FloatField('Рост (см)', validators=[Optional(), NumberRange(min=0, max=250)])
     weight = FloatField('Вес (кг)', validators=[Optional(), NumberRange(min=0, max=150)])
-    activity = SelectField('Активность', choices=[
-        ('1.2', 'Минимальная'),
-        ('1.375', 'Легкая'),
-        ('1.55', 'Средняя'),
-        ('1.725', 'Высокая'),
-        ('1.9', 'Очень высокая')
-    ])
+    # Поле активности оставляем свободным (коэффициент или ключ).
+    activity = StringField('Активность', validators=[Optional()])

@@ -25,21 +25,27 @@ class Student(db.Model):
     login = db.Column(db.String(50), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
     name = db.Column(db.String(120), nullable=True)
+    gender = db.Column(db.String(10), nullable=True)
     calories = db.Column(db.Float, default=2000.0)
     protein = db.Column(db.Float, default=0.0)
     fat = db.Column(db.Float, default=0.0)
     carbs = db.Column(db.Float, default=0.0)
+    # Сохраняем антропометрию, чтобы можно было пересчитывать КБЖУ
+    age = db.Column(db.Float, nullable=True)
+    height = db.Column(db.Float, nullable=True)
+    weight = db.Column(db.Float, nullable=True)
+    activity = db.Column(db.Float, nullable=True)
     parent_id = db.Column(db.Integer, db.ForeignKey('parents.id'), nullable=True)
     role = db.Column(db.String(20), default="student")
-    is_teacher = db.Column(db.Boolean, default=False)
     city = db.Column(db.String(100), nullable=True)
     school = db.Column(db.String(200), nullable=True)
     grade = db.Column(db.String(20), nullable=True)
 
     def __init__(self, login: str, password: str, parent_id: int | None = None, 
                  calories: float = 2000.0, protein: float = 0.0, fat: float = 0.0, carbs: float = 0.0,
-                 role: str = "student", is_teacher: bool = False, city: str | None = None, 
-                 school: str | None = None, grade: str | None = None, name: str | None = None):
+                     role: str = "student", city: str | None = None, 
+                 school: str | None = None, grade: str | None = None, name: str | None = None,
+                 age: float | None = None, height: float | None = None, weight: float | None = None, activity: float | None = None, gender: str | None = None):
         self.login = login
         self.password = password
         self.parent_id = parent_id
@@ -48,11 +54,15 @@ class Student(db.Model):
         self.fat = float(fat)
         self.carbs = float(carbs)
         self.role = role
-        self.is_teacher = is_teacher
         self.city = city
         self.school = school
         self.grade = grade
         self.name = name
+        self.age = age
+        self.height = height
+        self.weight = weight
+        self.activity = activity
+        self.gender = gender
 
     @property
     def is_authenticated(self):
