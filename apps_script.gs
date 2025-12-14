@@ -544,6 +544,392 @@ function getIndexHtml() {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Главная - School Cafe</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <style>
+        .bd-placeholder-img {
+            font-size: 1.125rem;
+            text-anchor: middle;
+            user-select: none;
+        }
+        @media (min-width: 768px) {
+            .bd-placeholder-img-lg { font-size: 3.5rem; }
+        }
+        .album .card { margin-bottom: 1.5rem; }
+    </style>
+</head>
+<body>
+    <header data-bs-theme="dark">
+        <div class="navbar navbar-dark bg-dark shadow-sm">
+            <div class="container d-flex justify-content-between align-items-center">
+                <a href="?page=index" class="navbar-brand d-flex align-items-center">
+                    <strong>School Cafe</strong>
+                </a>
+                <div class="d-flex">
+                    <a href="?page=calorie_calculator" class="btn btn-outline-light me-2">Калькулятор калорий</a>
+                    <a href="?page=photo_analyze" class="btn btn-outline-light me-2">Анализ еды</a>
+                    <a href="?page=about" class="btn btn-outline-light me-2">О нас</a>
+                    <a href="?page=login" class="btn btn-outline-light">Войти</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <section class="py-5 text-center container">
+            <div class="row py-lg-5">
+                <div class="col-lg-6 col-md-8 mx-auto">
+                    <h1 class="fw-light">Меню на сегодня</h1>
+                    <p class="text-muted small">Неделя: <strong>1</strong> · День: <strong>1</strong></p>
+                    <p class="lead text-body-secondary">
+                        Свежая и полезная еда для школьников
+                    </p>
+                    <p>
+                        <a href="?page=calorie_calculator" class="btn btn-primary my-2">Калькулятор калорий</a>
+                        <a href="?page=photo_analyze" class="btn btn-success my-2 ms-2">Анализировать еду</a>
+                        <a href="?page=about" class="btn btn-secondary my-2">Узнать больше</a>
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <div class="album py-5 bg-body-tertiary">
+            <div class="container">
+                <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-3">
+                    <!-- Пример меню -->
+                    <div class="col">
+                        <div class="card shadow-sm">
+                            <svg class="bd-placeholder-img card-img-top" width="100%" height="225" xmlns="http://www.w3.org/2000/svg" role="img" preserveAspectRatio="xMidYMid slice">
+                                <title>Thumbnail</title>
+                                <rect width="100%" height="100%" fill="#55595c"></rect>
+                                <text x="50%" y="50%" fill="#eceeef" dy=".3em">Каша овсяная</text>
+                            </svg>
+                            <div class="card-body">
+                                <h5>Каша овсяная</h5>
+                                <p class="card-text small">Калории: 150 · Белки: 5г · Жиры: 3г · Углеводы: 25г</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="card shadow-sm">
+                            <svg class="bd-placeholder-img card-img-top" width="100%" height="225" xmlns="http://www.w3.org/2000/svg" role="img" preserveAspectRatio="xMidYMid slice">
+                                <title>Thumbnail</title>
+                                <rect width="100%" height="100%" fill="#55595c"></rect>
+                                <text x="50%" y="50%" fill="#eceeef" dy=".3em">Салат овощной</text>
+                            </svg>
+                            <div class="card-body">
+                                <h5>Салат овощной</h5>
+                                <p class="card-text small">Калории: 80 · Белки: 2г · Жиры: 1г · Углеводы: 15г</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</body>
+</html>`;
+}
+
+function getLoginHtml() {
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход - School Cafe</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="d-flex align-items-center py-4 bg-body-tertiary">
+    <main class="form-signin w-100 m-auto" style="max-width: 400px;">
+        <form id="loginForm">
+            <h1 class="h3 mb-3 fw-normal">Пожалуйста, войдите</h1>
+
+            <div class="form-floating mb-3">
+                <select class="form-control" id="role" required>
+                    <option value="student">Ученик</option>
+                    <option value="parent">Родитель</option>
+                    <option value="cook">Повар</option>
+                    <option value="teacher">Учитель</option>
+                </select>
+                <label for="role">Кто вы?</label>
+            </div>
+
+            <div class="form-floating mb-3">
+                <input type="text" class="form-control" id="login" placeholder="Логин" required>
+                <label for="login">Логин</label>
+            </div>
+
+            <div class="form-floating mb-3">
+                <input type="password" class="form-control" id="password" placeholder="Пароль" required>
+                <label for="password">Пароль</label>
+            </div>
+
+            <button class="btn btn-primary w-100 py-2" type="submit">Войти</button>
+            <a href="?page=index" class="btn btn-secondary w-100 mt-2">Назад</a>
+        </form>
+        <div id="message" class="mt-3"></div>
+    </main>
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const role = document.getElementById('role').value;
+            const login = document.getElementById('login').value;
+            const password = document.getElementById('password').value;
+
+            google.script.run.withSuccessHandler(function(result) {
+                if (result.success) {
+                    window.location.href = '?page=dashboard';
+                } else {
+                    document.getElementById('message').innerHTML = '<div class="alert alert-danger">' + result.message + '</div>';
+                }
+            }).handleLogin(login, password);
+        });
+    </script>
+</body>
+</html>`;
+}
+
+function getCalorieCalculatorHtml() {
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Калькулятор калорий - School Cafe</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <header data-bs-theme="dark">
+        <div class="navbar navbar-dark bg-dark shadow-sm">
+            <div class="container d-flex justify-content-between align-items-center">
+                <a href="?page=index" class="navbar-brand">School Cafe</a>
+                <a href="?page=dashboard" class="btn btn-outline-light">Назад</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <h2 class="text-center mb-4">Калькулятор калорий</h2>
+                <div class="card">
+                    <div class="card-body">
+                        <form id="calcForm">
+                            <div class="mb-3">
+                                <label class="form-label">Возраст (лет)</label>
+                                <input type="number" class="form-control" id="age" required />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Рост (см)</label>
+                                <input type="number" class="form-control" id="height" required />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Вес (кг)</label>
+                                <input type="number" class="form-control" id="weight" required />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Пол</label>
+                                <select class="form-control" id="gender">
+                                    <option value="male">Мужской</option>
+                                    <option value="female">Женский</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Уровень активности</label>
+                                <select class="form-control" id="activity">
+                                    <option value="low">Низкий</option>
+                                    <option value="medium">Средний</option>
+                                    <option value="high">Высокий</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">Рассчитать</button>
+                        </form>
+                        <div id="result" class="mt-3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    <script>
+        document.getElementById('calcForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const age = parseInt(document.getElementById('age').value);
+            const height = parseInt(document.getElementById('height').value);
+            const weight = parseInt(document.getElementById('weight').value);
+            const gender = document.getElementById('gender').value;
+            const activity = document.getElementById('activity').value;
+
+            let bmr = gender === 'male' ? 10 * weight + 6.25 * height - 5 * age + 5 : 10 * weight + 6.25 * height - 5 * age - 161;
+            const multipliers = {low: 1.2, medium: 1.55, high: 1.725};
+            const tdee = Math.round(bmr * multipliers[activity]);
+
+            document.getElementById('result').innerHTML = '<div class="alert alert-success">Рекомендуемая суточная норма: <strong>' + tdee + ' ккал</strong></div>';
+        });
+    </script>
+</body>
+</html>`;
+}
+
+function getPhotoAnalyzeHtml() {
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Анализ еды - School Cafe</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+<body>
+    <header data-bs-theme="dark">
+        <div class="navbar navbar-dark bg-dark shadow-sm">
+            <div class="container d-flex justify-content-between align-items-center">
+                <a href="?page=index" class="navbar-brand">School Cafe</a>
+                <a href="?page=dashboard" class="btn btn-outline-light">Назад</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <h2 class="text-center mb-4">Анализатор еды по фото</h2>
+
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <form id="upload-form">
+                            <div class="mb-3">
+                                <label for="file" class="form-label">Выберите фото</label>
+                                <input class="form-control" type="file" id="file" accept="image/*" required>
+                                <div class="form-text">Выберите изображение блюда для анализа</div>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn btn-primary" id="analyze-btn">
+                                    <i class="bi bi-camera me-2"></i>
+                                    Загрузить и проанализировать
+                                </button>
+                                <button type="button" class="btn btn-secondary" onclick="clearForm()">
+                                    <i class="bi bi-x-circle me-2"></i>
+                                    Очистить
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div id="preview-section" class="card mb-4 d-none">
+                    <div class="card-body">
+                        <h5>Предварительный просмотр</h5>
+                        <img id="preview" src="" alt="Preview" class="img-fluid rounded" />
+                    </div>
+                </div>
+
+                <div id="result-section" class="card d-none">
+                    <div class="card-body">
+                        <h5 class="card-title">Результаты анализа</h5>
+                        <div id="result-content"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    <script>
+        document.getElementById('upload-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const file = document.getElementById('file').files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('preview').src = e.target.result;
+                document.getElementById('preview-section').classList.remove('d-none');
+
+                // Преобразовать в base64
+                const base64 = e.target.result.split(',')[1];
+
+                google.script.run.withSuccessHandler(function(result) {
+                    if (result.success) {
+                        document.getElementById('result-content').innerHTML = \`
+                            <p><strong>Блюдо:</strong> \${result.data.name}</p>
+                            <p><strong>Калории:</strong> \${result.data.calories} ккал</p>
+                            <p><strong>Белки:</strong> \${result.data.protein} г</p>
+                            <p><strong>Жиры:</strong> \${result.data.fat} г</p>
+                            <p><strong>Углеводы:</strong> \${result.data.carbohydrates} г</p>
+                        \`;
+                        document.getElementById('result-section').classList.remove('d-none');
+                    } else {
+                        alert('Ошибка анализа: ' + result.error);
+                    }
+                }).analyzeFoodImage(base64);
+            };
+            reader.readAsDataURL(file);
+        });
+
+        function clearForm() {
+            document.getElementById('file').value = '';
+            document.getElementById('preview-section').classList.add('d-none');
+            document.getElementById('result-section').classList.add('d-none');
+        }
+    </script>
+</body>
+</html>`;
+}
+
+function getAboutHtml() {
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>О нас - School Cafe</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <header data-bs-theme="dark">
+        <div class="navbar navbar-dark bg-dark shadow-sm">
+            <div class="container d-flex justify-content-between align-items-center">
+                <a href="?page=index" class="navbar-brand">School Cafe</a>
+                <a href="?page=dashboard" class="btn btn-outline-light">Назад</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="container py-5">
+        <h1 class="mb-4">Почему важно считать КБЖУ для детей</h1>
+        <div class="row">
+            <div class="col-lg-8 mx-auto">
+                <div class="card shadow">
+                    <div class="card-body">
+                        <p class="mb-4">🧠 <strong>1. Помогает формировать правильные пищевые привычки</strong></p>
+                        <p class="mb-4">Ребёнок учится понимать, что еда бывает разной по пользе...</p>
+                        <p class="mb-4">❤️ <strong>6. Прививает ответственность за здоровье</strong></p>
+                        <p class="mb-4">Ребёнок видит, как питание влияет на самочувствие...</p>
+                    </div>
+                </div>
+                <div class="text-center mt-4">
+                    <a href="?page=dashboard" class="btn btn-secondary">
+                        <i class="bi bi-arrow-left me-2"></i>Назад
+                    </a>
+                </div>
+            </div>
+        </div>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>`;
+}
+
+// HTML страницы (встроенные для простоты)
+function getIndexHtml() {
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Главная</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
